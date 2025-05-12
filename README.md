@@ -43,7 +43,7 @@ _Provide the following for all datasets, including the attributes you are consid
 - [ ] (Link to dataset - reference or URL)[Dataset Name]
   - [ ] Pre-processing: e.g., Removed items with fewer than 5 interactions, and users with fewer than 5 interactions
   - [ ] Subsets considered: e.g., Cold Start (5-10 items)
-  - [ ] Dataset site: # users, # items, sparsity:
+  - [ ] Dataset size: # users, # items, sparsity:
   - [ ] Attributes for user fairness (only include if used):
   - [ ] Attributes for item fairness (only include if used):
   - [ ] Attributes for group fairness (only include if used):
@@ -57,8 +57,6 @@ _Explain why these metrics are appropriate for your recommendation task and what
 
 - [ ] Metric #1
   - [ ] Description:
-
-
 
 
 ---
