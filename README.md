@@ -40,7 +40,7 @@ _Define the recommendation task you are solving (e.g., sequential, generative, c
 
 _Provide the following for all datasets, including the attributes you are considering to measure things like item fairness (for example)_:
 
-- [ ] (Link to dataset - reference or URL)[Dataset Name]
+- [ ] [Dataset Name](Link-to-dataset-DOI-or-URL)
   - [ ] Pre-processing: e.g., Removed items with fewer than 5 interactions, and users with fewer than 5 interactions
   - [ ] Subsets considered: e.g., Cold Start (5-10 items)
   - [ ] Dataset size: # users, # items, sparsity:
@@ -65,8 +65,8 @@ _Explain why these metrics are appropriate for your recommendation task and what
 
 _Describe each baseline, primary methods, and how they are implemented. Mention tools/frameworks used (e.g., Surprise, LightFM, RecBole, PyTorch)._
 Describe each baseline
-- [ ] (Link to reference)[Baseline 1]
-- [ ] (Link to reference)[Baseline 2]
+- [ ] [Baseline 1](Link-to-reference)
+- [ ] [Baseline 2](Link-to-reference)
 
 
 ### 🧠 High-Level Description of Method
