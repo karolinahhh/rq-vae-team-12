@@ -21,41 +21,41 @@ class KVCache(nn.Module):
         self.register_buffer("k_cache", torch.zeros(*dim, requires_grad=False))
         self.register_buffer("v_cache", torch.zeros(*dim, requires_grad=False))
         self.dim = dim
-        
+
         self._reset_limits()
         self.is_empty = True
-    
+
     def _reset_limits(self):
         self.cache_limits = [0 for _ in self.dim]
         self.next_seq_pos = None
-    
+
     def reset(self):
         self.k_cache.fill_(0)
         self.v_cache.fill_(0)
-        
+
         self._reset_limits()
         self.is_empty = True
-    
+
     @property
     def device(self):
         return self.k_cache.device
-    
+
     @property
     def keys(self):
         B, N, D = self.cache_limits
         return self.k_cache[:B, :N, :D]
-    
+
     @property
     def values(self):
         B, N, D = self.cache_limits
         return self.v_cache[:B, :N, :D]
-    
+
     @property
     def seq_lengths(self):
         if self.is_empty:
             return 0
         return self.next_seq_pos
-    
+
     @torch.no_grad
     def store(self, keys: Tensor, values: Tensor, mask: Tensor) -> None:
         B, N = mask.shape
@@ -65,7 +65,7 @@ class KVCache(nn.Module):
         self.cache_limits = [B, N, self.dim[-1]]
         self.next_seq_pos = mask.sum(axis=1).unsqueeze(-1)
         self.is_empty = False
-    
+
     @torch.no_grad
     def append_column(self, keys: Tensor, values: Tensor) -> None:
         B, N, D = self.cache_limits
@@ -78,18 +78,26 @@ class KVCache(nn.Module):
         if max_pos_appended >= N:
             self.cache_limits[1] = max_pos_appended + 1
         self.next_seq_pos += 1
-    
+
     @torch.no_grad
     @torch.compiler.disable
     def as_jagged(self):
-        keys_jagged = padded_to_jagged_tensor(self.keys, lengths=self.seq_lengths.squeeze(), max_len=self.keys.shape[1])
-        values_jagged = padded_to_jagged_tensor(self.values, lengths=self.seq_lengths.squeeze(), max_len=self.values.shape[1])
+        keys_jagged = padded_to_jagged_tensor(
+            self.keys, lengths=self.seq_lengths.squeeze(), max_len=self.keys.shape[1]
+        )
+        values_jagged = padded_to_jagged_tensor(
+            self.values,
+            lengths=self.seq_lengths.squeeze(),
+            max_len=self.values.shape[1],
+        )
         return keys_jagged, values_jagged
 
     @torch.no_grad
     def apply(self, fn) -> None:
         B, N, D = self.cache_limits
-        k_transformed, v_transformed = fn(self.k_cache[:B, :N, :D]), fn(self.v_cache[:B, :N, :D])
+        k_transformed, v_transformed = fn(self.k_cache[:B, :N, :D]), fn(
+            self.v_cache[:B, :N, :D]
+        )
         next_seq_pos_transformed = fn(self.next_seq_pos)
         B, N, D = k_transformed.shape
 
@@ -109,17 +117,20 @@ class Attend(nn.Module):
         self.head_dim = head_dim
         self.d_out = d_out
         self.dropout = dropout
-    
-    def jagged_forward(self, qu: NestedTensor, ke: NestedTensor, va: NestedTensor, is_causal: bool) -> NestedTensor:
+
+    def jagged_forward(
+        self, qu: NestedTensor, ke: NestedTensor, va: NestedTensor, is_causal: bool
+    ) -> NestedTensor:
         queries = qu.unflatten(-1, [self.num_heads, self.head_dim]).transpose(1, 2)
         keys = ke.unflatten(-1, [self.num_heads, self.head_dim]).transpose(1, 2)
         values = va.unflatten(-1, [self.num_heads, self.head_dim]).transpose(1, 2)
 
-        dropout_p = 0. if not self.training else self.dropout
+        dropout_p = 0.0 if not self.training else self.dropout
 
         context_vec = F.scaled_dot_product_attention(
-            queries, keys, values, dropout_p=dropout_p, is_causal=is_causal)
-        
+            queries, keys, values, dropout_p=dropout_p, is_causal=is_causal
+        )
+
         context_vec = context_vec.transpose(1, 2).flatten(-2)
         return context_vec
 
@@ -134,13 +145,23 @@ class Attend(nn.Module):
         # (3, b, num_heads, num_tokens, head_dim) -> 3 times (b, num_heads, num_tokens, head_dim)
         queries, keys, values = qkv
 
-        use_dropout = 0. if not self.training else self.dropout
+        use_dropout = 0.0 if not self.training else self.dropout
 
         context_vec = F.scaled_dot_product_attention(
-            queries, keys, values, attn_mask=None, dropout_p=use_dropout, is_causal=is_causal)
+            queries,
+            keys,
+            values,
+            attn_mask=None,
+            dropout_p=use_dropout,
+            is_causal=is_causal,
+        )
 
         # Combine heads, where self.d_out = self.num_heads * self.head_dim
-        context_vec = context_vec.transpose(1, 2).contiguous().view(batch_size, num_tokens, self.d_out)
+        context_vec = (
+            context_vec.transpose(1, 2)
+            .contiguous()
+            .view(batch_size, num_tokens, self.d_out)
+        )
         return context_vec
 
 
@@ -153,7 +174,7 @@ class MultiHeadAttention(nn.Module):
         cross_attn=False,
         dropout=0.0,
         qkv_bias=False,
-        enable_kv_cache=False
+        enable_kv_cache=False,
     ) -> None:
         super().__init__()
 
@@ -171,13 +192,15 @@ class MultiHeadAttention(nn.Module):
             self.kv = nn.Linear(d_in, 2 * d_out, bias=qkv_bias)
         else:
             self.qkv = nn.Linear(d_in, 3 * d_out, bias=qkv_bias)
-    
+
         self.proj = nn.Linear(d_out, d_out, bias=False)
 
         self.attend = Attend(self.d_out, self.num_heads, self.head_dim, dropout=False)
 
-        self._kv_cache = KVCache((2560, 80, 384)) if enable_kv_cache else None # (640, 800, 64) TODO: Revisit KV Cache
-    
+        self._kv_cache = (
+            KVCache((2560, 80, 384)) if enable_kv_cache else None
+        )  # (640, 800, 64) TODO: Revisit KV Cache
+
     @property
     def kv_cache(self) -> KVCache:
         return self._kv_cache
@@ -192,42 +215,62 @@ class MultiHeadAttention(nn.Module):
         use_cache: bool = False,
     ) -> AttentionInput:
         # (b, num_tokens, embed_dim) --> (b, num_tokens, 3 * embed_dim)
-        assert not self.cross_attn or x_kv is not None, "Found null x_kv in cross attn. layer"
-        
+        assert (
+            not self.cross_attn or x_kv is not None
+        ), "Found null x_kv in cross attn. layer"
+
         if self.cross_attn:
             queries = self.q(x)
             keys, values = self.kv(x_kv).chunk(2, dim=-1)
         else:
             queries, keys, values = self.qkv(x).chunk(3, dim=-1)
-        
-        if not self.training and use_cache and self.enable_kv_cache and self.kv_cache.is_empty:
+
+        if (
+            not self.training
+            and use_cache
+            and self.enable_kv_cache
+            and self.kv_cache.is_empty
+        ):
             assert padding_mask is not None
             B, N = padding_mask.shape
-            
+
             self.kv_cache.store(
-                keys=jagged_to_flattened_tensor(keys), 
-                values=jagged_to_flattened_tensor(values), 
-                mask=padding_mask
+                keys=jagged_to_flattened_tensor(keys),
+                values=jagged_to_flattened_tensor(values),
+                mask=padding_mask,
             )
-            context_vec = self.attend.jagged_forward(queries, keys, values, is_causal=is_causal)
+            context_vec = self.attend.jagged_forward(
+                queries, keys, values, is_causal=is_causal
+            )
 
-        elif not self.training and use_cache and self.enable_kv_cache and not self.kv_cache.is_empty:
+        elif (
+            not self.training
+            and use_cache
+            and self.enable_kv_cache
+            and not self.kv_cache.is_empty
+        ):
             assert padding_mask is not None
             B, N = padding_mask.shape
 
-            keys, values = jagged_to_flattened_tensor(keys), jagged_to_flattened_tensor(values)
-            
+            keys, values = jagged_to_flattened_tensor(keys), jagged_to_flattened_tensor(
+                values
+            )
+
             self.kv_cache.append_column(keys=keys, values=values)
             keys, values = self.kv_cache.as_jagged()
-            
-            context_vec = self.attend.jagged_forward(queries, keys, values, is_causal=False)
-        
+
+            context_vec = self.attend.jagged_forward(
+                queries, keys, values, is_causal=False
+            )
+
         elif jagged:
-            context_vec = self.attend.jagged_forward(queries, keys, values, is_causal=is_causal)
+            context_vec = self.attend.jagged_forward(
+                queries, keys, values, is_causal=is_causal
+            )
 
         if not jagged:
             raise Exception("Unjagged attention currently not supported.")
             # context_vec = self.attend(qkv, is_causal=is_causal)
-    
+
         context_vec = self.proj(context_vec)
         return context_vec

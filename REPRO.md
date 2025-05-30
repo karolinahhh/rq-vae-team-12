@@ -94,6 +94,18 @@ sbatch job_scripts/run_evaluation_amazon.job
 
 ---
 
+## ⚙️ Gini Coeffision
+
+You can use the gini coeffision only if 
+    1. You have a category and you have defined it in the .gin configuration
+    2. You have not create the dataset
+
+If you dont have both then delete the dataset folder and re-run it so that the categories can be created!
+
+The Gini Coeffision is only made for the AmazonReview dataset. If you want to add it to another dataset then you need to configure that file.
+
+---
+
 ## 📦 Dependencies / References
 
 This project repository uses the following frameworks / refers to the following papers:

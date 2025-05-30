@@ -9,8 +9,11 @@ class SeqBatch(NamedTuple):
     ids: Tensor
     ids_fut: Tensor
     x: Tensor
+    x_fut_brand_id: Tensor
     x_fut: Tensor
+    x_brand_id: Tensor
     seq_mask: Tensor
+
 
 class TokenizedSeqBatch(NamedTuple):
     user_ids: Tensor

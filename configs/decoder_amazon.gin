@@ -29,3 +29,5 @@ train.attn_embed_dim=512
 train.attn_layers=8
 train.decoder_embed_dim=128
 train.model_jagged_mode=True
+# add the category here. If there is none then add None
+train.category="brand"
