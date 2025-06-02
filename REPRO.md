@@ -106,6 +106,34 @@ The Gini Coeffision is only made for the AmazonReview dataset. If you want to ad
 
 ---
 
+---
+# Important Implementation Note
+## Evaluation Methodology Issue
+The current codebase has a significant methodological issue: **it evaluates the model on the test set during training**. This is problematic in machine learning evaluation practices.
+### Why This Is An Issue
+Using test data during the training process leads to:
+- Overfitting to the test set
+- Artificially optimistic performance metrics
+- Invalid assessment of the model's generalization ability
+### Correct Machine Learning Evaluation Approach
+A proper machine learning workflow should use:
+1. **Training set** - For model parameter optimization
+2. **Validation set** - For hyperparameter tuning and early stopping
+3. **Test set** - Reserved exclusively for final evaluation, never accessed during training
+### Current Implementation Status
+While the code correctly splits the dataset into training, validation, and test sets, it incorrectly uses the test set during the training process instead of using the validation set for intermediate evaluations.
+### Reproducibility Considerations
+According to the original authors ([issue #41](https://github.com/EdoardoBotta/RQ-VAE-Recommender/issues/41)), exact numerical results are not reproducible. This is expected in this implementation and does not invalidate the reproducibility assessment.
+For the reproducibility course, focus on:
+- Observing similar trends in metrics rather than exact values
+- Documenting any deviations from expected behavior
+- Explaining potential causes for differences
+- Suggesting improvements or extensions to the original work
+### Action Required
+The reproducibility team should address this evaluation methodology issue by modifying the code to use the validation set (not the test set) during training. This will align the implementation with standard machine learning practices.
+This correction will not only improve the methodological soundness but also provide more realistic performance estimates of the model on truly unseen data.
+
+---
 ## 📦 Dependencies / References
 
 This project repository uses the following frameworks / refers to the following papers:
