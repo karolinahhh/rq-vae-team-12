@@ -194,7 +194,40 @@ class AmazonReviews(InMemoryDataset, PreprocessingMixin):
 
         gen = torch.Generator()
         gen.manual_seed(42)
-        data["item"].is_train = torch.rand(item_emb.shape[0], generator=gen) > 0.05
+        # data["item"].is_train = torch.rand(item_emb.shape[0], generator=gen) > 0.05
+
+        ########## Add train/val/test item splits ##########
+
+        num_items = data["item"].x.shape[0]
+        is_train = torch.zeros(num_items, dtype=torch.bool)
+        is_val = torch.zeros(num_items, dtype=torch.bool)
+        is_test = torch.zeros(num_items, dtype=torch.bool)
+
+        # Create a deterministic random permutation of item indices
+        gen = torch.Generator().manual_seed(42)
+        perm = torch.randperm(num_items, generator=gen)
+
+        n_total = num_items
+        n_train = int(0.8 * n_total)
+        n_val = int(0.1 * n_total)
+
+        train_ids = perm[:n_train]
+        val_ids = perm[n_train:n_train + n_val]
+        test_ids = perm[n_train + n_val:]
+
+        is_train[train_ids] = True
+        is_val[val_ids] = True
+        is_test[test_ids] = True
+
+        # data["item"].is_train = is_train
+        # data["item"].is_val = is_val
+        # data["item"].is_test = is_test
+        data["item"]["is_train"] = is_train
+        data["item"]["is_val"] = is_val
+        data["item"]["is_test"] = is_test
+
+        print("is_val in item:", "is_val" in data["item"])
+        ##########
 
         self.save([data], self.processed_paths[0])
 

@@ -36,7 +36,7 @@ def train(
     amp=False,
     wandb_logging=False,
     do_eval=True,
-    force_dataset_process=False,
+    force_dataset_process=True,  ###change
     mixed_precision_type="fp16",
     gradient_accumulate_every=1,
     save_model_every=1000000,
@@ -84,13 +84,28 @@ def train(
             root=dataset_folder,
             dataset=dataset,
             force_process=False,
-            train_test_split="eval",
+            train_test_split="val",
             split=dataset_split,
         )
         eval_sampler = BatchSampler(RandomSampler(eval_dataset), batch_size, False)
         eval_dataloader = DataLoader(
             eval_dataset,
             sampler=eval_sampler,
+            batch_size=None,
+            collate_fn=lambda batch: batch,
+        )
+
+        test_dataset = ItemData(
+            root=dataset_folder,
+            dataset=dataset,
+            force_process=False,
+            train_test_split="test",
+            split=dataset_split,
+        )
+        test_sampler = BatchSampler(RandomSampler(test_dataset), batch_size, False)
+        test_dataloader = DataLoader(
+            test_dataset,
+            sampler=test_sampler,
             batch_size=None,
             collate_fn=lambda batch: batch,
         )
@@ -286,9 +301,24 @@ def train(
 
             pbar.update(1)
 
+    #final evaluation on the test set
+    model.eval()
+    test_losses = []
+    with torch.no_grad():
+        for batch in test_dataloader:
+            data = batch_to(batch, device)
+            model_output = model(data, gumbel_t=t)
+            test_losses.append(model_output.loss.cpu().item())
+
+    avg_test_loss = np.mean(test_losses)
+    print(f"\n Final Test Loss: {avg_test_loss:.4f}")
+
     if wandb_logging:
+        wandb.log({"final_test_loss": avg_test_loss})
         wandb.finish()
 
+    # if wandb_logging:
+    #     wandb.finish()
 
 if __name__ == "__main__":
     parse_config()
