@@ -1,0 +1,13 @@
+import data.processed
+import modules.model
+
+evaluate_decoder.pretrained_rqvae_path = "out/rqvae/amazon/beauty/checkpoint_399999.pt"
+evaluate_decoder.pretrained_decoder_path = "out/decoder/amazon/beauty/checkpoint_199999.pt"
+evaluate_decoder.save_dir_root="out/eval/amazon/beauty/"
+evaluate_decoder.dataset_folder = "dataset/amazon"
+evaluate_decoder.dataset = %data.processed.RecDataset.AMAZON
+evaluate_decoder.dataset_split = "beauty"
+evaluate_decoder.category = "brand"
+evaluate_decoder.batch_size = 256
+evaluate_decoder.ks = [1, 5, 10]
+evaluate_decoder.temperature = 1.0

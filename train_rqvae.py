@@ -302,13 +302,14 @@ def train(
             pbar.update(1)
 
     #final evaluation on the test set
-    model.eval()
-    test_losses = []
-    with torch.no_grad():
-        for batch in test_dataloader:
-            data = batch_to(batch, device)
-            model_output = model(data, gumbel_t=t)
-            test_losses.append(model_output.loss.cpu().item())
+    if do_eval:
+        model.eval()
+        test_losses = []
+        with torch.no_grad():
+            for batch in test_dataloader:
+                data = batch_to(batch, device)
+                model_output = model(data, gumbel_t=t)
+                test_losses.append(model_output.loss.cpu().item())
 
     avg_test_loss = np.mean(test_losses)
     print(f"\n Final Test Loss: {avg_test_loss:.4f}")
