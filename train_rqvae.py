@@ -84,7 +84,7 @@ def train(
             root=dataset_folder,
             dataset=dataset,
             force_process=False,
-            train_test_split="val",
+            train_test_split="eval",
             split=dataset_split,
         )
         eval_sampler = BatchSampler(RandomSampler(eval_dataset), batch_size, False)
