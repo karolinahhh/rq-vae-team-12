@@ -103,14 +103,16 @@ class SeqData(Dataset):
         self,
         root: str,
         *args,
-        is_train: bool = True,
+        # is_train: bool = True,
+        split_type: str = "train", # "train", "val", or "test"
         subsample: bool = False,
         force_process: bool = False,
         dataset: RecDataset = RecDataset.ML_1M,
         **kwargs
     ) -> None:
 
-        assert (not subsample) or is_train, "Can only subsample on training split."
+        # assert (not subsample) or is_train, "Can only subsample on training split."
+        assert (not subsample) or split_type == "train", "Can only subsample on training split."
 
         raw_dataset_class = DATASET_NAME_TO_RAW_DATASET[dataset]
         max_seq_len = DATASET_NAME_TO_MAX_SEQ_LEN[dataset]
@@ -121,9 +123,37 @@ class SeqData(Dataset):
         if not os.path.exists(processed_data_path) or force_process:
             raw_data.process(max_seq_len=max_seq_len)
 
-        split = "train" if is_train else "test"
         self.subsample = subsample
-        self.sequence_data = raw_data.data[("user", "rated", "item")]["history"][split]
+        ###ORIGINAL
+        # split = "train" if is_train else "test"
+        # self.sequence_data = raw_data.data[("user", "rated", "item")]["history"][split]
+        ######
+        # assert split_type in {"train", "val", "test"}, f"Invalid split_type: {split_type}"
+        # full_data = raw_data.data[("user", "rated", "item")]["history"]["train"]
+        # num_examples = len(full_data["userId"])
+        # train_indices = slice(0, int(0.9 * num_examples))
+        # val_indices = slice(int(0.9 * num_examples), num_examples)
+
+        # if split_type == "train":
+        #     self.sequence_data = {k: v[train_indices] for k, v in full_data.items()}
+        # elif split_type == "val":
+        #     self.sequence_data = {k: v[val_indices] for k, v in full_data.items()}
+        # else:  # test
+        #     self.sequence_data = raw_data.data[("user", "rated", "item")]["history"]["test"]
+        #####
+        assert split_type in {"train", "val", "test"}, f"Invalid split_type: {split_type}"
+        # full_data = raw_data.data[("user", "rated", "item")]["history"]["train"]
+        # num_examples = len(full_data["userId"])
+        # train_indices = slice(0, int(0.9 * num_examples))
+        # val_indices = slice(int(0.9 * num_examples), num_examples)
+
+        if split_type == "train":
+            self.sequence_data = raw_data.data[("user", "rated", "item")]["history"]["train"]
+        elif split_type == "val":
+            self.sequence_data = raw_data.data[("user", "rated", "item")]["history"]["eval"]
+        else:  # test
+            self.sequence_data = raw_data.data[("user", "rated", "item")]["history"]["test"]
+        ###########
 
         if not self.subsample:
             self.sequence_data["itemId"] = torch.nn.utils.rnn.pad_sequence(
@@ -134,7 +164,7 @@ class SeqData(Dataset):
 
         self._max_seq_len = max_seq_len
         self.item_data = raw_data.data["item"]["x"]
-        self.split = split
+        self.split = split_type
 
         self.item_brand_id = raw_data.data["item"]["brand_id"]
 
@@ -200,20 +230,33 @@ if __name__ == "__main__":
     train_dataset = SeqData(
         root="dataset/amazon",
         dataset=RecDataset.AMAZON,
-        is_train=True,
+        # is_train=True,
+        split_type="train", ###
         subsample=True,
         split="beauty",
     )
     print("train_dataset", train_dataset[0])
+
     eval_dataset = SeqData(
         root="dataset/amazon",
         dataset=RecDataset.AMAZON,
-        is_train=False,
+        # is_train=False,
+        split_type="val", ###
         subsample=False,
         split="beauty",
         get_brand_id=True,
     )
     print("eval_dataset", eval_dataset[0])
+    
+    test_dataset = SeqData(
+        root="dataset/amazon",
+        dataset=RecDataset.AMAZON,
+        split_type="test",
+        subsample=False,
+        split="beauty",
+    )
+    print("test_dataset", test_dataset[0])
+    
     import pdb
 
     pdb.set_trace()

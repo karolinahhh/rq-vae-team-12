@@ -1,0 +1,9 @@
+numpy
+scipy
+scikit-learn
+torch
+torchvision
+torchaudio
+torch_geometric
+pillow
+opencv-python

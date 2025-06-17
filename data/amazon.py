@@ -194,7 +194,7 @@ class AmazonReviews(InMemoryDataset, PreprocessingMixin):
 
         gen = torch.Generator()
         gen.manual_seed(42)
-        # data["item"].is_train = torch.rand(item_emb.shape[0], generator=gen) > 0.05
+        data["item"].is_train = torch.rand(item_emb.shape[0], generator=gen) > 0.05
 
         ########## Add train/val/test item splits ##########
 

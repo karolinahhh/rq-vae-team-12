@@ -99,29 +99,61 @@ def train(
         )
     )
 
+    # train_dataset = SeqData(
+    #     root=dataset_folder,
+    #     dataset=dataset,
+    #     is_train=True,
+    #     subsample=train_data_subsample,
+    #     split=dataset_split,
+    # )
+    # eval_dataset = SeqData(
+    #     root=dataset_folder,
+    #     dataset=dataset,
+    #     is_train=False,
+    #     subsample=False,
+    #     split=dataset_split,
+    # )
     train_dataset = SeqData(
         root=dataset_folder,
         dataset=dataset,
-        is_train=True,
+        split_type="train",
         subsample=train_data_subsample,
         split=dataset_split,
     )
-    eval_dataset = SeqData(
+
+    val_dataset = SeqData(
         root=dataset_folder,
         dataset=dataset,
-        is_train=False,
+        split_type="val",
         subsample=False,
         split=dataset_split,
     )
 
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-
-    train_dataloader = cycle(train_dataloader)
-    eval_dataloader = DataLoader(eval_dataset, batch_size=batch_size, shuffle=True)
-
-    train_dataloader, eval_dataloader = accelerator.prepare(
-        train_dataloader, eval_dataloader
+    test_dataset = SeqData(
+        root=dataset_folder,
+        dataset=dataset,
+        split_type="test",
+        subsample=False,
+        split=dataset_split,
     )
+    #########
+
+    # train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+    # train_dataloader = cycle(train_dataloader)
+    # eval_dataloader = DataLoader(eval_dataset, batch_size=batch_size, shuffle=True)
+
+    # train_dataloader, eval_dataloader = accelerator.prepare(
+    #     train_dataloader, eval_dataloader
+    # )
+    train_dataloader = cycle(DataLoader(train_dataset, batch_size=batch_size, shuffle=True))
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    train_dataloader, val_dataloader, test_dataloader = accelerator.prepare(
+        train_dataloader, val_dataloader, test_dataloader
+    )
+    ##############
 
     tokenizer = SemanticIdTokenizer(
         input_dim=vae_input_dim,
@@ -214,7 +246,7 @@ def train(
             if (iter + 1) % partial_eval_every == 0:
                 model.eval()
                 model.enable_generation = False
-                for batch in eval_dataloader:
+                for batch in val_dataloader:###
                     data = batch_to(batch, device)
                     tokenized_data = tokenizer(data)
 
@@ -234,7 +266,7 @@ def train(
                 model.eval()
                 model.enable_generation = True
                 with tqdm(
-                    eval_dataloader,
+                    val_dataloader, ######
                     desc=f"Eval {iter+1}",
                     disable=not accelerator.is_main_process,
                 ) as pbar_eval:
@@ -282,6 +314,34 @@ def train(
                     )
 
             pbar.update(1)
+
+    # Final evaluation on test set after training
+    model.eval()
+    model.enable_generation = True
+    test_metrics_accumulator = TopKAccumulator(ks=[1, 5, 10])
+
+    with tqdm(
+        test_dataloader,
+        desc="Final Test Evaluation",
+        disable=not accelerator.is_main_process,
+    ) as pbar_test:
+        for batch in pbar_test:
+            data = batch_to(batch, device)
+            tokenized_data = tokenizer(data)
+
+            generated = model.generate_next_sem_id(
+                tokenized_data, top_k=True, temperature=1
+            )
+            actual, top_k = tokenized_data.sem_ids_fut, generated.sem_ids
+            test_metrics_accumulator.accumulate(actual=actual, top_k=top_k, tokenizer=tokenizer)
+
+    test_eval_metrics = test_metrics_accumulator.reduce()
+
+    if accelerator.is_main_process:
+        print("Test metrics:", test_eval_metrics)
+        if wandb_logging:
+            wandb.log({f"test_{k}": v for k, v in test_eval_metrics.items()})
+
 
     if wandb_logging:
         wandb.finish()
