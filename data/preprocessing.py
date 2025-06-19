@@ -86,7 +86,7 @@ class PreprocessingMixin:
             feat: (
                 torch.from_numpy(
                     rearrange(
-                        df.select(feat).to_numpy().squeeze().tolist(), "b d -> b d"
+                        df.select(feat).to_numpy().copy().squeeze().tolist(), "b d -> b d"
                     )
                 )
                 if df.select(
@@ -97,11 +97,11 @@ class PreprocessingMixin:
             for feat in features
         }
         fut_out = {
-            feat + FUT_SUFFIX: torch.from_numpy(df.select(feat + FUT_SUFFIX).to_numpy())
+            feat + FUT_SUFFIX: torch.from_numpy(df.select(feat + FUT_SUFFIX).to_numpy().copy())
             for feat in features
         }
         out.update(fut_out)
-        out["userId"] = torch.from_numpy(df.select("userId").to_numpy())
+        out["userId"] = torch.from_numpy(df.select("userId").to_numpy().copy())
         return out
 
     @staticmethod

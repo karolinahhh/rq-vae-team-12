@@ -255,14 +255,14 @@ class AmazonReviews23(InMemoryDataset, PreprocessingMixin):
         self.split = split
         self.config_name = [f"raw_review_All_{split.capitalize()}", f"raw_meta_All_{split.capitalize()}"]
         self.category = category
-        self.brand_mapping = {}
+        self.store_mapping = {}
         
         super(AmazonReviews23, self).__init__(root, transform, pre_transform, force_reload)
         self.load(self.processed_paths[0], data_cls=HeteroData)
 
     @property
     def raw_file_names(self) -> List[str]:
-        return ["state.json"]
+        return [f"{config}/state.json" for config in self.config_name]
 
     @property
     def processed_file_names(self) -> str:
@@ -335,7 +335,6 @@ class AmazonReviews23(InMemoryDataset, PreprocessingMixin):
             sequences["test"]["itemId_fut"].append(item_ids[-1])
             user_lists["test"].append(uid)
 
-        # Convert to Polars DataFrames
         for sp in sequences:
             sequences[sp]["userId"] = [data_maps["user2id"][uid] for uid in user_lists[sp]]
             sequences[sp] = pl.from_dict(sequences[sp])
@@ -377,7 +376,7 @@ class AmazonReviews23(InMemoryDataset, PreprocessingMixin):
             for k, v in sequences.items()
         }
 
-        data["item"].x = torch.tensor(item_emb)
+        data["item"].x = item_emb
         data["item"].text = np.array(sentences, dtype=object)
         data["item"].store_id = torch.tensor(item_data["store_id"].values)
         #data["item"].image = torch.tensor(item_emb_image)
@@ -413,5 +412,5 @@ class AmazonReviews23(InMemoryDataset, PreprocessingMixin):
         self.save([data], self.processed_paths[0])
 
         os.makedirs(self.processed_dir, exist_ok=True)
-        with open(osp.join(self.processed_dir, f"brand_mapping_{self.split}.json"), "w") as f:
-            json.dump(self.brand_mapping, f)
+        with open(osp.join(self.processed_dir, f"store_mapping_{self.split}.json"), "w") as f:
+            json.dump(self.store_mapping, f)

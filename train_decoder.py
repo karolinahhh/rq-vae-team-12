@@ -5,67 +5,61 @@ import torch
 import wandb
 
 from accelerate import Accelerator
-from data.processed import ItemData
-from data.processed import RecDataset
-from data.processed import SeqData
-from data.utils import batch_to
-from data.utils import cycle
-from data.utils import next_batch
+from data.processed import ItemData, RecDataset, SeqData
+from data.utils import batch_to, cycle, next_batch
 from evaluate.metrics import TopKAccumulator
 from modules.model import EncoderDecoderRetrievalModel
 from modules.scheduler.inv_sqrt import InverseSquareRootScheduler
 from modules.tokenizer.semids import SemanticIdTokenizer
-from modules.utils import compute_debug_metrics
-from modules.utils import parse_config
+from modules.utils import compute_debug_metrics, parse_config
 from huggingface_hub import login
 from torch.optim import AdamW
-from torch.utils.data import BatchSampler
-from torch.utils.data import DataLoader
-from torch.utils.data import RandomSampler
+from torch.utils.data import BatchSampler, DataLoader, RandomSampler
 from tqdm import tqdm
 
 
 @gin.configurable
 def train(
-    iterations=500000,
-    batch_size=64,
-    learning_rate=0.001,
-    weight_decay=0.01,
-    dataset_folder="dataset/ml-1m",
-    save_dir_root="out/",
-    dataset=RecDataset.ML_1M,
-    pretrained_rqvae_path=None,
-    pretrained_decoder_path=None,
-    split_batches=True,
-    amp=False,
-    wandb_logging=False,
-    force_dataset_process=False,
-    mixed_precision_type="fp16",
-    gradient_accumulate_every=1,
-    save_model_every=1000000,
-    partial_eval_every=1000,
-    full_eval_every=10000,
-    vae_input_dim=18,
-    vae_embed_dim=16,
-    vae_hidden_dims=[18, 18],
-    vae_codebook_size=32,
-    vae_codebook_normalize=False,
-    vae_sim_vq=False,
-    vae_n_cat_feats=18,
-    vae_n_layers=3,
-    decoder_embed_dim=64,
-    dropout_p=0.1,
-    attn_heads=8,
-    attn_embed_dim=64,
-    attn_layers=4,
-    dataset_split="beauty",
-    push_vae_to_hf=False,
-    train_data_subsample=True,
-    model_jagged_mode=True,
-    vae_hf_model_name="edobotta/rqvae-amazon-beauty",
-    category=None,
-):
-    if dataset != RecDataset.AMAZON:
+        iterations=500000,
+        batch_size=64,
+        learning_rate=0.001,
+        weight_decay=0.01,
+        dataset_folder="dataset/ml-1m",
+        save_dir_root="out/",
+        dataset=RecDataset.ML_1M,
+        pretrained_rqvae_path=None,
+        pretrained_decoder_path=None,
+        split_batches=True,
+        amp=False,
+        wandb_logging=False,
+        force_dataset_process=False,
+        mixed_precision_type="fp16",
+        gradient_accumulate_every=1,
+        save_model_every=1000000,
+        partial_eval_every=1000,
+        full_eval_every=10000,
+        vae_input_dim=18,
+        vae_embed_dim=16,
+        vae_hidden_dims=[18, 18],
+        vae_codebook_size=32,
+        vae_codebook_normalize=False,
+        vae_sim_vq=False,
+        vae_n_cat_feats=18,
+        vae_n_layers=3,
+        decoder_embed_dim=64,
+        dropout_p=0.1,
+        attn_heads=8,
+        attn_embed_dim=64,
+        attn_layers=4,
+        dataset_split="beauty",
+        push_vae_to_hf=False,
+        train_data_subsample=True,
+        model_jagged_mode=True,
+        vae_hf_model_name="edobotta/rqvae-amazon-beauty",
+        category=None,
+    ):
+
+    if dataset not in (RecDataset.AMAZON, RecDataset.AMAZON23):
         raise Exception(f"Dataset currently not supported: {dataset}.")
 
     if wandb_logging:
@@ -99,20 +93,6 @@ def train(
         )
     )
 
-    # train_dataset = SeqData(
-    #     root=dataset_folder,
-    #     dataset=dataset,
-    #     is_train=True,
-    #     subsample=train_data_subsample,
-    #     split=dataset_split,
-    # )
-    # eval_dataset = SeqData(
-    #     root=dataset_folder,
-    #     dataset=dataset,
-    #     is_train=False,
-    #     subsample=False,
-    #     split=dataset_split,
-    # )
     train_dataset = SeqData(
         root=dataset_folder,
         dataset=dataset,
@@ -124,7 +104,7 @@ def train(
     val_dataset = SeqData(
         root=dataset_folder,
         dataset=dataset,
-        split_type="val",
+        split_type="eval",
         subsample=False,
         split=dataset_split,
     )
@@ -136,16 +116,7 @@ def train(
         subsample=False,
         split=dataset_split,
     )
-    #########
 
-    # train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-
-    # train_dataloader = cycle(train_dataloader)
-    # eval_dataloader = DataLoader(eval_dataset, batch_size=batch_size, shuffle=True)
-
-    # train_dataloader, eval_dataloader = accelerator.prepare(
-    #     train_dataloader, eval_dataloader
-    # )
     train_dataloader = cycle(DataLoader(train_dataset, batch_size=batch_size, shuffle=True))
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
@@ -153,7 +124,6 @@ def train(
     train_dataloader, val_dataloader, test_dataloader = accelerator.prepare(
         train_dataloader, val_dataloader, test_dataloader
     )
-    ##############
 
     tokenizer = SemanticIdTokenizer(
         input_dim=vae_input_dim,
@@ -194,9 +164,7 @@ def train(
 
     start_iter = 0
     if pretrained_decoder_path is not None:
-        checkpoint = torch.load(
-            pretrained_decoder_path, map_location=device, weights_only=False
-        )
+        checkpoint = torch.load(pretrained_decoder_path, map_location=device, weights_only=False)
         model.load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
         if "scheduler" in checkpoint:
@@ -227,9 +195,7 @@ def train(
                     total_loss += loss
 
                 if wandb_logging and accelerator.is_main_process:
-                    train_debug_metrics = compute_debug_metrics(
-                        tokenized_data, model_output
-                    )
+                    train_debug_metrics = compute_debug_metrics(tokenized_data, model_output)
 
                 accelerator.backward(total_loss)
                 assert model.sem_id_embedder.emb.weight.grad is not None
@@ -254,12 +220,8 @@ def train(
                         model_output_eval = model(tokenized_data)
 
                     if wandb_logging and accelerator.is_main_process:
-                        eval_debug_metrics = compute_debug_metrics(
-                            tokenized_data, model_output_eval, "eval"
-                        )
-                        eval_debug_metrics["eval_loss"] = (
-                            model_output_eval.loss.detach().cpu().item()
-                        )
+                        eval_debug_metrics = compute_debug_metrics(tokenized_data, model_output_eval, "eval")
+                        eval_debug_metrics["eval_loss"] = (model_output_eval.loss.detach().cpu().item())
                         wandb.log(eval_debug_metrics)
 
             if (iter + 1) % full_eval_every == 0:
@@ -274,14 +236,10 @@ def train(
                         data = batch_to(batch, device)
                         tokenized_data = tokenizer(data)
 
-                        generated = model.generate_next_sem_id(
-                            tokenized_data, top_k=True, temperature=1
-                        )
+                        generated = model.generate_next_sem_id(tokenized_data, top_k=True, temperature=1)
                         actual, top_k = tokenized_data.sem_ids_fut, generated.sem_ids
                         # add the tokinzer
-                        metrics_accumulator.accumulate(
-                            actual=actual, top_k=top_k, tokenizer=tokenizer
-                        )
+                        metrics_accumulator.accumulate(actual=actual, top_k=top_k, tokenizer=tokenizer)
                 eval_metrics = metrics_accumulator.reduce()
 
                 print(eval_metrics)
@@ -329,9 +287,7 @@ def train(
             data = batch_to(batch, device)
             tokenized_data = tokenizer(data)
 
-            generated = model.generate_next_sem_id(
-                tokenized_data, top_k=True, temperature=1
-            )
+            generated = model.generate_next_sem_id(tokenized_data, top_k=True, temperature=1)
             actual, top_k = tokenized_data.sem_ids_fut, generated.sem_ids
             test_metrics_accumulator.accumulate(actual=actual, top_k=top_k, tokenizer=tokenizer)
 
@@ -341,7 +297,6 @@ def train(
         print("Test metrics:", test_eval_metrics)
         if wandb_logging:
             wandb.log({f"test_{k}": v for k, v in test_eval_metrics.items()})
-
 
     if wandb_logging:
         wandb.finish()

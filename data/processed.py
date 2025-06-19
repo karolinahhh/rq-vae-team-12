@@ -81,7 +81,7 @@ class ItemData(Dataset):
         item_ids = (
             torch.tensor(idx).unsqueeze(0) if not isinstance(idx, torch.Tensor) else idx
         )
-        x = self.item_data[idx]
+        x = self.item_data[idx, :768]
         x_brand_id = torch.Tensor(self.item_brand_id[idx])
         return SeqBatch(
             user_ids=-1 * torch.ones_like(item_ids.squeeze(0)),
@@ -118,14 +118,14 @@ class SeqData(Dataset):
 
         self.subsample = subsample
 
-        assert split_type in {"train", "val", "test"}, f"Invalid split_type: {split_type}"
+        assert split_type in {"train", "eval", "test"}, f"Invalid split_type: {split_type}"
 
         history = raw_data.data[("user","rated","item")].history
         self.sequence_data = history[split_type]
 
         if not self.subsample:
             self.sequence_data["itemId"] = torch.nn.utils.rnn.pad_sequence(
-                [torch.tensor(l[-max_seq_len:]) for l in self.sequence_data["itemId"]],
+                [l[-max_seq_len:].detach().clone() if isinstance(l, Tensor) else torch.tensor(l[-max_seq_len:]) for l in self.sequence_data["itemId"]],
                 batch_first=True,
                 padding_value=-1,
             )
@@ -133,7 +133,7 @@ class SeqData(Dataset):
         self._max_seq_len = max_seq_len
         self.item_data = raw_data.data["item"]["x"]
         self.split = split_type
-        self.item_brand_id = raw_data.data["item"]["brand_id"]
+        self.item_brand_id = raw_data.data["item"]["store_id"]
 
     @property
     def max_seq_len(self):

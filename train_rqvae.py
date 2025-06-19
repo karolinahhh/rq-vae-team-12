@@ -89,7 +89,7 @@ def train(
             root=dataset_folder,
             dataset=dataset,
             force_process=False,
-            train_test_split="eval",
+            train_test_split="val",
             split=dataset_split,
         )
         eval_sampler = BatchSampler(RandomSampler(eval_dataset), batch_size, False)
@@ -153,9 +153,7 @@ def train(
     start_iter = 0
     if pretrained_rqvae_path is not None:
         model.load_pretrained(pretrained_rqvae_path)
-        state = torch.load(
-            pretrained_rqvae_path, map_location=device, weights_only=False
-        )
+        state = torch.load(pretrained_rqvae_path, map_location=device, weights_only=False)
         optimizer.load_state_dict(state["optimizer"])
         start_iter = state["iter"] + 1
 
@@ -185,9 +183,7 @@ def train(
             total_loss = 0
             t = 0.2
             if iter == 0 and use_kmeans_init:
-                kmeans_init_data = batch_to(
-                    train_dataset[torch.arange(min(20000, len(train_dataset)))], device
-                )
+                kmeans_init_data = batch_to(train_dataset[torch.arange(min(20000, len(train_dataset)))], device)
                 model(kmeans_init_data, t)
 
             optimizer.zero_grad()
@@ -253,9 +249,7 @@ def train(
                             eval_model_output = model(data, gumbel_t=t)
 
                         eval_losses[0].append(eval_model_output.loss.cpu().item())
-                        eval_losses[1].append(
-                            eval_model_output.reconstruction_loss.cpu().item()
-                        )
+                        eval_losses[1].append(eval_model_output.reconstruction_loss.cpu().item())
                         eval_losses[2].append(eval_model_output.rqvae_loss.cpu().item())
 
                     eval_losses = np.array(eval_losses).mean(axis=-1)
@@ -284,17 +278,13 @@ def train(
                     corpus_ids = tokenizer.precompute_corpus_ids(index_dataset)
                     max_duplicates = corpus_ids[:, -1].max() / corpus_ids.shape[0]
 
-                    _, counts = torch.unique(
-                        corpus_ids[:, :-1], dim=0, return_counts=True
-                    )
+                    _, counts = torch.unique(corpus_ids[:, :-1], dim=0, return_counts=True)
                     p = counts / corpus_ids.shape[0]
                     rqvae_entropy = -(p * torch.log(p)).sum()
 
                     for cid in range(vae_n_layers):
                         _, counts = torch.unique(corpus_ids[:, cid], return_counts=True)
-                        id_diversity_log[f"codebook_usage_{cid}"] = (
-                            len(counts) / vae_codebook_size
-                        )
+                        id_diversity_log[f"codebook_usage_{cid}"] = (len(counts) / vae_codebook_size)
 
                     id_diversity_log["rqvae_entropy"] = rqvae_entropy.cpu().item()
                     id_diversity_log["max_id_duplicates"] = max_duplicates.cpu().item()
@@ -321,8 +311,6 @@ def train(
         wandb.log({"final_test_loss": avg_test_loss})
         wandb.finish()
 
-    # if wandb_logging:
-    #     wandb.finish()
 
 if __name__ == "__main__":
     parse_config()
