@@ -68,7 +68,7 @@ class ItemData(Dataset):
         else:
             raise ValueError(f"Unknown train_test_split value: {train_test_split}")
 
-        self.item_data, self.item_text, self.item_brand_id = (
+        self.item_data, self.item_text, self.item_store_id = (
             raw_data.data["item"]["x"][filt],
             raw_data.data["item"]["text"][filt],
             raw_data.data["item"]["store_id"][filt],
@@ -82,15 +82,15 @@ class ItemData(Dataset):
             torch.tensor(idx).unsqueeze(0) if not isinstance(idx, torch.Tensor) else idx
         )
         x = self.item_data[idx, :768]
-        x_brand_id = torch.Tensor(self.item_brand_id[idx])
+        x_store_id = torch.Tensor(self.item_store_id[idx])
         return SeqBatch(
             user_ids=-1 * torch.ones_like(item_ids.squeeze(0)),
             ids=item_ids,
             ids_fut=-1 * torch.ones_like(item_ids.squeeze(0)),
             x=x,
-            x_brand_id=x_brand_id,
+            x_store_id=x_store_id,
             x_fut=-1 * torch.ones_like(item_ids.squeeze(0)),
-            x_fut_brand_id=-1 * torch.ones_like(item_ids.squeeze(0)),
+            x_fut_store_id=-1 * torch.ones_like(item_ids.squeeze(0)),
             seq_mask=torch.ones_like(item_ids, dtype=bool),
         )
 
@@ -133,7 +133,7 @@ class SeqData(Dataset):
         self._max_seq_len = max_seq_len
         self.item_data = raw_data.data["item"]["x"]
         self.split = split_type
-        self.item_brand_id = raw_data.data["item"]["store_id"]
+        self.item_store_id = raw_data.data["item"]["store_id"]
 
     @property
     def max_seq_len(self):
@@ -159,8 +159,8 @@ class SeqData(Dataset):
             item_ids_fut = self.sequence_data["itemId_fut"][idx]
 
         assert (item_ids >= -1).all(), "Invalid movie id found"
-        x_brand_id = torch.Tensor(self.item_brand_id[item_ids])
-        x_brand_id[item_ids == -1] = -1.0
+        x_store_id = torch.Tensor(self.item_store_id[item_ids])
+        x_store_id[item_ids == -1] = -1.0
 
         x = self.item_data[item_ids, :768]
         x[item_ids == -1] = -1
@@ -168,8 +168,8 @@ class SeqData(Dataset):
         x_fut = self.item_data[item_ids_fut]
         x_fut[item_ids_fut == -1] = -1
 
-        x_fut_brand_id = torch.Tensor(
-            self.item_brand_id[item_ids_fut] if item_ids_fut != -1 else -1
+        x_fut_store_id = torch.Tensor(
+            self.item_store_id[item_ids_fut] if item_ids_fut != -1 else -1
         )
 
         return SeqBatch(
@@ -177,9 +177,9 @@ class SeqData(Dataset):
             ids=item_ids,
             ids_fut=item_ids_fut,
             x=x,
-            x_brand_id=-1 * torch.ones_like(item_ids.squeeze(0)),
+            x_store_id=x_store_id,
             x_fut=x_fut,
-            x_fut_brand_id=-1 * torch.ones_like(item_ids.squeeze(0)),
+            x_fut_store_id=x_fut_store_id,
             seq_mask=(item_ids >= 0),
         )
 

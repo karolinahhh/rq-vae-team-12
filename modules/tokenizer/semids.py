@@ -100,7 +100,7 @@ class SemanticIdTokenizer(nn.Module):
             # take the output and the sem ids that were created and for each sem id map it to its brand
             for idx, item in enumerate(batch_ids):
                 if str(item.tolist()) not in self.map_to_category:
-                    self.map_to_category[str(item.tolist())] = output.x_brand_id[
+                    self.map_to_category[str(item.tolist())] = output.x_store_id[
                         idx
                     ].item()
             # Detect in-batch duplicates

@@ -51,7 +51,7 @@ def evaluate_decoder(
     accelerator = Accelerator()
     device = accelerator.device
 
-    if dataset != RecDataset.AMAZON:
+    if dataset not in [RecDataset.AMAZON, RecDataset.AMAZON23]:
         raise ValueError(f"Only AMAZON dataset supported, got {dataset}")
     
     item_dataset = (
@@ -66,7 +66,7 @@ def evaluate_decoder(
     eval_seq = SeqData(
         root=dataset_folder,
         dataset=dataset,
-        is_train=False,
+        split_type="eval",
         subsample=False,
         split=dataset_split,
     )
