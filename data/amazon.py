@@ -6,6 +6,7 @@ import os.path as osp
 import pandas as pd
 import polars as pl
 import torch
+from datasets import load_dataset, load_from_disk
 
 from collections import defaultdict
 from data.preprocessing import PreprocessingMixin
@@ -14,9 +15,10 @@ from torch_geometric.data import extract_zip
 from torch_geometric.data import HeteroData
 from torch_geometric.data import InMemoryDataset
 from torch_geometric.io import fs
-from typing import Callable
-from typing import List
-from typing import Optional, Dict, Union
+from typing import Callable, List, Optional, Dict, Union
+
+from PIL import Image
+from torchvision import transforms
 
 
 def parse(path):
@@ -236,4 +238,180 @@ class AmazonReviews(InMemoryDataset, PreprocessingMixin):
             self.processed_dir, f"brand_mapping_{self.split}.json"
         )
         with open(brand_mapping_path, "w") as f:
+            json.dump(self.brand_mapping, f)
+
+class AmazonReviews23(InMemoryDataset, PreprocessingMixin):
+
+    def __init__(
+        self,
+        root: str,
+        split: str, # "All_Beauty", "All_Sports", etc
+        transform: Optional[Callable] = None,
+        pre_transform: Optional[Callable] = None,
+        force_reload: bool = False,
+        category="store",
+    ):
+        
+        self.split = split
+        self.config_name = [f"raw_review_All_{split.capitalize()}", f"raw_meta_All_{split.capitalize()}"]
+        self.category = category
+        self.brand_mapping = {}
+        
+        super(AmazonReviews23, self).__init__(root, transform, pre_transform, force_reload)
+        self.load(self.processed_paths[0], data_cls=HeteroData)
+
+    @property
+    def raw_file_names(self) -> List[str]:
+        return ["state.json"]
+
+    @property
+    def processed_file_names(self) -> str:
+        return f"data_{self.split}.pt"
+
+    def download(self) -> None:
+        for config in self.config_name:
+            ds = load_dataset(
+                "McAuley-Lab/Amazon-Reviews-2023",
+                config,
+                split="full",
+                trust_remote_code=True,
+            )
+            ds.save_to_disk(osp.join(self.raw_dir, config))
+
+    def _remap_ids(self, x):
+        return x - 1
+
+    def first_large(self, img_dict):
+        urls = img_dict.get("large", np.array([], dtype=object))
+        if isinstance(urls, np.ndarray) and urls.size > 0:
+            return urls[0]
+        return None
+
+    def process_image(self, image_path):
+        img_transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        ])
+        image = Image.open(image_path).convert("RGB")
+        image = img_transform(image)
+        return image
+
+    def process(self) -> None:
+        # Reload the Arrow snapshot
+        pdf_reviews = load_from_disk(osp.join(self.raw_dir, self.config_name[0])).to_pandas()
+        pdf_items = load_from_disk(osp.join(self.raw_dir, self.config_name[1])).to_pandas()
+
+        max_seq_len = 20
+        user_ids = list(pdf_reviews["user_id"].unique())
+        data_maps = {
+            "item2id": {asin: idx for idx, asin in enumerate(pdf_reviews["parent_asin"].unique())},
+            "user2id": {uid: idx for idx, uid in enumerate(user_ids)},
+        }
+
+        user_lists = {sp: [] for sp in ["train","eval","test"]}
+        sequences = {sp: defaultdict(list) for sp in ["train","eval","test"]}
+        for uid, grp in pdf_reviews.sort_values("timestamp").groupby("user_id", sort=False):
+
+            raw_asins = grp["parent_asin"].tolist()
+            if len(raw_asins) < 3:
+                continue
+
+            item_ids = [self._remap_ids(data_maps["item2id"][asin]) for asin in raw_asins]
+
+            train = item_ids[:-2]
+            eval_ = item_ids[-(max_seq_len+2):-2]
+            test = item_ids[-(max_seq_len+1):-1]
+            
+            sequences["train"]["itemId"].append(train)
+            sequences["train"]["itemId_fut"].append(item_ids[-2])
+            user_lists["train"].append(uid)
+
+            sequences["eval"]["itemId"].append(eval_ + [-1]*(max_seq_len - len(eval_)))
+            sequences["eval"]["itemId_fut"].append(item_ids[-2])
+            user_lists["eval"].append(uid)
+
+            sequences["test"]["itemId"].append(test + [-1]*(max_seq_len - len(test)))
+            sequences["test"]["itemId_fut"].append(item_ids[-1])
+            user_lists["test"].append(uid)
+
+        # Convert to Polars DataFrames
+        for sp in sequences:
+            sequences[sp]["userId"] = [data_maps["user2id"][uid] for uid in user_lists[sp]]
+            sequences[sp] = pl.from_dict(sequences[sp])
+
+        # pdf_items["first_image"] = pdf_items["images"].apply(self.first_large)
+
+        asin2id = pd.DataFrame([
+            {"parent_asin": k, "id": self._remap_ids(int(v))}
+            for k, v in data_maps["item2id"].items()
+        ])
+
+        item_data = (
+            pdf_items
+            .merge(asin2id, on="parent_asin")
+            .sort_values(by="id")
+            .reset_index(drop=True)
+            .fillna({self.category: "Unknown"})
+        )
+
+        unique_stores = item_data[self.category].unique().tolist()
+        self.store_mapping = {i: b for i, b in enumerate(unique_stores)}
+        store_to_id = {b: i for i, b in self.store_mapping.items()}
+        item_data["store_id"] = item_data[self.category].map(lambda x: store_to_id.get(x, -1))
+
+        sentences = (
+            "Title: " + item_data["title"].astype(str) + "; " +
+            "Store: " + item_data["store"].astype(str) + "; " +
+            "Categories: " + item_data["categories"].str[0].astype(str) + "; " +
+            "Price: " + item_data["price"].astype(str) + "; "
+        )
+        # images = item_data["first_image"]
+
+        item_emb = self._encode_text_feature(sentences)
+        # item_emb_image = self._encode_image_feature([self.process_image(img) for img in images])
+
+        data = HeteroData()
+        data["user","rated","item"].history = {
+            k: self._df_to_tensor_dict(v, ["itemId"])
+            for k, v in sequences.items()
+        }
+
+        data["item"].x = torch.tensor(item_emb)
+        data["item"].text = np.array(sentences, dtype=object)
+        data["item"].store_id = torch.tensor(item_data["store_id"].values)
+        #data["item"].image = torch.tensor(item_emb_image)
+        data["store_mapping"] = self.store_mapping
+
+        gen = torch.Generator().manual_seed(42)
+        data["item"].is_train = torch.rand(item_emb.shape[0], generator=gen) > 0.05
+
+        num_items = data["item"].x.shape[0]
+        is_train = torch.zeros(num_items, dtype=torch.bool)
+        is_val = torch.zeros(num_items, dtype=torch.bool)
+        is_test = torch.zeros(num_items, dtype=torch.bool)
+
+        n_total = num_items
+        n_train = int(0.8 * n_total)
+        n_val = int(0.1 * n_total)
+
+        perm = torch.randperm(num_items, generator=gen)
+
+        train_ids = perm[:n_train]
+        val_ids = perm[n_train:n_train + n_val]
+        test_ids = perm[n_train + n_val:]
+
+        is_train[train_ids] = True
+        is_val[val_ids] = True
+        is_test[test_ids] = True
+
+        data["item"]["is_train"] = is_train
+        data["item"]["is_val"] = is_val
+        data["item"]["is_test"] = is_test
+
+        # Save the processed graph object
+        self.save([data], self.processed_paths[0])
+
+        os.makedirs(self.processed_dir, exist_ok=True)
+        with open(osp.join(self.processed_dir, f"brand_mapping_{self.split}.json"), "w") as f:
             json.dump(self.brand_mapping, f)

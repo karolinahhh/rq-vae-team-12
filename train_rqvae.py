@@ -5,54 +5,59 @@ import numpy as np
 import wandb
 
 from accelerate import Accelerator
-from data.processed import ItemData
-from data.processed import RecDataset
-from data.utils import batch_to
-from data.utils import cycle
-from data.utils import next_batch
+from data.processed import ItemData, RecDataset, SeqData
+from data.utils import batch_to, cycle, next_batch
 from modules.rqvae import RqVae
 from modules.quantize import QuantizeForwardMode
 from modules.tokenizer.semids import SemanticIdTokenizer
 from modules.utils import parse_config
 from torch.optim import AdamW
-from torch.utils.data import BatchSampler
-from torch.utils.data import DataLoader
-from torch.utils.data import RandomSampler
+from torch.utils.data import BatchSampler, DataLoader, RandomSampler
+from torch.utils.data._utils.collate import default_collate
 from tqdm import tqdm
+
+def multimodal_collate(batch):
+    images = torch.stack([b.image for b in batch], dim=0)
+    for b in batch:
+        del b.image
+    text_batch = default_collate(batch)
+    text_batch["image"] = images
+    return text_batch
 
 
 @gin.configurable
 def train(
-    iterations=50000,
-    batch_size=64,
-    learning_rate=0.0001,
-    weight_decay=0.01,
-    dataset_folder="dataset/ml-1m",
-    dataset=RecDataset.ML_1M,
-    pretrained_rqvae_path=None,
-    save_dir_root="out/",
-    use_kmeans_init=True,
-    split_batches=True,
-    amp=False,
-    wandb_logging=False,
-    do_eval=True,
-    force_dataset_process=True,  ###change
-    mixed_precision_type="fp16",
-    gradient_accumulate_every=1,
-    save_model_every=1000000,
-    eval_every=50000,
-    commitment_weight=0.25,
-    vae_n_cat_feats=18,
-    vae_input_dim=18,
-    vae_embed_dim=16,
-    vae_hidden_dims=[18, 18],
-    vae_codebook_size=32,
-    vae_codebook_normalize=False,
-    vae_codebook_mode=QuantizeForwardMode.GUMBEL_SOFTMAX,
-    vae_sim_vq=False,
-    vae_n_layers=3,
-    dataset_split="beauty",
-):
+        iterations=50000,
+        batch_size=64,
+        learning_rate=0.0001,
+        weight_decay=0.01,
+        dataset_folder="dataset/ml-1m",
+        dataset=RecDataset.ML_1M,
+        pretrained_rqvae_path=None,
+        save_dir_root="out/",
+        use_kmeans_init=True,
+        split_batches=True,
+        amp=False,
+        wandb_logging=False,
+        do_eval=True,
+        force_dataset_process=True,  ###change
+        mixed_precision_type="fp16",
+        gradient_accumulate_every=1,
+        save_model_every=1000000,
+        eval_every=50000,
+        commitment_weight=0.25,
+        vae_n_cat_feats=18,
+        vae_input_dim=18,
+        vae_embed_dim=16,
+        vae_hidden_dims=[18, 18],
+        vae_codebook_size=32,
+        vae_codebook_normalize=False,
+        vae_codebook_mode=QuantizeForwardMode.GUMBEL_SOFTMAX,
+        vae_sim_vq=False,
+        vae_n_layers=3,
+        dataset_split="beauty",
+    ):
+
     if wandb_logging:
         params = locals()
 
@@ -75,7 +80,7 @@ def train(
         train_dataset,
         sampler=train_sampler,
         batch_size=None,
-        collate_fn=lambda batch: batch,
+        collate_fn=lambda batch: batch, #multimodal_collate
     )
     train_dataloader = cycle(train_dataloader)
 
@@ -92,7 +97,7 @@ def train(
             eval_dataset,
             sampler=eval_sampler,
             batch_size=None,
-            collate_fn=lambda batch: batch,
+            collate_fn=lambda batch: batch, #multimodal_collate
         )
 
         test_dataset = ItemData(
@@ -107,7 +112,7 @@ def train(
             test_dataset,
             sampler=test_sampler,
             batch_size=None,
-            collate_fn=lambda batch: batch,
+            collate_fn=lambda batch: batch, #multimodal_collate
         )
 
     index_dataset = (
@@ -117,9 +122,7 @@ def train(
             force_process=False,
             train_test_split="all",
             split=dataset_split,
-        )
-        if do_eval
-        else train_dataset
+        ) if do_eval else train_dataset
     )
 
     train_dataloader = accelerator.prepare(train_dataloader)

@@ -6,3 +6,4 @@ trained_models/transformer*
 tl_out
 slurm_out
 results
+amazon_reviews_23

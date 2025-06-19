@@ -3,7 +3,7 @@ import os
 import random
 import torch
 
-from data.amazon import AmazonReviews
+from data.amazon import AmazonReviews, AmazonReviews23
 from data.ml1m import RawMovieLens1M
 from data.ml32m import RawMovieLens32M
 from data.schemas import SeqBatch
@@ -18,12 +18,14 @@ PROCESSED_MOVIE_LENS_SUFFIX = "/processed/data.pt"
 @gin.constants_from_enum
 class RecDataset(Enum):
     AMAZON = 1
-    ML_1M = 2
-    ML_32M = 3
+    AMAZON23 = 2
+    ML_1M = 3
+    ML_32M = 4
 
 
 DATASET_NAME_TO_RAW_DATASET = {
     RecDataset.AMAZON: AmazonReviews,
+    RecDataset.AMAZON23: AmazonReviews23,
     RecDataset.ML_1M: RawMovieLens1M,
     RecDataset.ML_32M: RawMovieLens32M,
 }
@@ -31,6 +33,7 @@ DATASET_NAME_TO_RAW_DATASET = {
 
 DATASET_NAME_TO_MAX_SEQ_LEN = {
     RecDataset.AMAZON: 20,
+    RecDataset.AMAZON23: 20,
     RecDataset.ML_1M: 200,
     RecDataset.ML_32M: 200,
 }
@@ -54,12 +57,6 @@ class ItemData(Dataset):
         if not os.path.exists(processed_data_path) or force_process:
             raw_data.process(max_seq_len=max_seq_len)
 
-        # if train_test_split == "train":
-        #     filt = raw_data.data["item"]["is_train"]
-        # elif train_test_split == "eval":
-        #     filt = ~raw_data.data["item"]["is_train"]
-        # elif train_test_split == "all":
-        #     filt = torch.ones_like(raw_data.data["item"]["x"][:, 0], dtype=bool)
         if train_test_split == "train":
             filt = raw_data.data["item"]["is_train"]
         elif train_test_split == "val":
@@ -74,7 +71,7 @@ class ItemData(Dataset):
         self.item_data, self.item_text, self.item_brand_id = (
             raw_data.data["item"]["x"][filt],
             raw_data.data["item"]["text"][filt],
-            raw_data.data["item"]["brand_id"][filt],
+            raw_data.data["item"]["store_id"][filt],
         )
 
     def __len__(self):
@@ -84,7 +81,7 @@ class ItemData(Dataset):
         item_ids = (
             torch.tensor(idx).unsqueeze(0) if not isinstance(idx, torch.Tensor) else idx
         )
-        x = self.item_data[idx, :768]
+        x = self.item_data[idx]
         x_brand_id = torch.Tensor(self.item_brand_id[idx])
         return SeqBatch(
             user_ids=-1 * torch.ones_like(item_ids.squeeze(0)),
@@ -103,7 +100,6 @@ class SeqData(Dataset):
         self,
         root: str,
         *args,
-        # is_train: bool = True,
         split_type: str = "train", # "train", "val", or "test"
         subsample: bool = False,
         force_process: bool = False,
@@ -111,49 +107,21 @@ class SeqData(Dataset):
         **kwargs
     ) -> None:
 
-        # assert (not subsample) or is_train, "Can only subsample on training split."
         assert (not subsample) or split_type == "train", "Can only subsample on training split."
 
         raw_dataset_class = DATASET_NAME_TO_RAW_DATASET[dataset]
         max_seq_len = DATASET_NAME_TO_MAX_SEQ_LEN[dataset]
-
         raw_data = raw_dataset_class(root=root, *args, **kwargs)
-
         processed_data_path = raw_data.processed_paths[0]
         if not os.path.exists(processed_data_path) or force_process:
             raw_data.process(max_seq_len=max_seq_len)
 
         self.subsample = subsample
-        ###ORIGINAL
-        # split = "train" if is_train else "test"
-        # self.sequence_data = raw_data.data[("user", "rated", "item")]["history"][split]
-        ######
-        # assert split_type in {"train", "val", "test"}, f"Invalid split_type: {split_type}"
-        # full_data = raw_data.data[("user", "rated", "item")]["history"]["train"]
-        # num_examples = len(full_data["userId"])
-        # train_indices = slice(0, int(0.9 * num_examples))
-        # val_indices = slice(int(0.9 * num_examples), num_examples)
 
-        # if split_type == "train":
-        #     self.sequence_data = {k: v[train_indices] for k, v in full_data.items()}
-        # elif split_type == "val":
-        #     self.sequence_data = {k: v[val_indices] for k, v in full_data.items()}
-        # else:  # test
-        #     self.sequence_data = raw_data.data[("user", "rated", "item")]["history"]["test"]
-        #####
         assert split_type in {"train", "val", "test"}, f"Invalid split_type: {split_type}"
-        # full_data = raw_data.data[("user", "rated", "item")]["history"]["train"]
-        # num_examples = len(full_data["userId"])
-        # train_indices = slice(0, int(0.9 * num_examples))
-        # val_indices = slice(int(0.9 * num_examples), num_examples)
 
-        if split_type == "train":
-            self.sequence_data = raw_data.data[("user", "rated", "item")]["history"]["train"]
-        elif split_type == "val":
-            self.sequence_data = raw_data.data[("user", "rated", "item")]["history"]["eval"]
-        else:  # test
-            self.sequence_data = raw_data.data[("user", "rated", "item")]["history"]["test"]
-        ###########
+        history = raw_data.data[("user","rated","item")].history
+        self.sequence_data = history[split_type]
 
         if not self.subsample:
             self.sequence_data["itemId"] = torch.nn.utils.rnn.pad_sequence(
@@ -165,7 +133,6 @@ class SeqData(Dataset):
         self._max_seq_len = max_seq_len
         self.item_data = raw_data.data["item"]["x"]
         self.split = split_type
-
         self.item_brand_id = raw_data.data["item"]["brand_id"]
 
     @property
@@ -179,17 +146,12 @@ class SeqData(Dataset):
         user_ids = self.sequence_data["userId"][idx]
 
         if self.subsample:
-            seq = (
-                self.sequence_data["itemId"][idx]
-                + self.sequence_data["itemId_fut"][idx].tolist()
-            )
+            seq = (self.sequence_data["itemId"][idx] + self.sequence_data["itemId_fut"][idx].tolist())
             start_idx = random.randint(0, max(0, len(seq) - 3))
             end_idx = random.randint(start_idx + 3, start_idx + self.max_seq_len + 1)
             sample = seq[start_idx:end_idx]
 
-            item_ids = torch.tensor(
-                sample[:-1] + [-1] * (self.max_seq_len - len(sample[:-1]))
-            )
+            item_ids = torch.tensor(sample[:-1] + [-1] * (self.max_seq_len - len(sample[:-1])))
             item_ids_fut = torch.tensor([sample[-1]])
 
         else:
