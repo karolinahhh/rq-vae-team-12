@@ -142,10 +142,6 @@ class SeqData(Dataset):
         #     self.sequence_data = raw_data.data[("user", "rated", "item")]["history"]["test"]
         #####
         assert split_type in {"train", "val", "test"}, f"Invalid split_type: {split_type}"
-        # full_data = raw_data.data[("user", "rated", "item")]["history"]["train"]
-        # num_examples = len(full_data["userId"])
-        # train_indices = slice(0, int(0.9 * num_examples))
-        # val_indices = slice(int(0.9 * num_examples), num_examples)
 
         if split_type == "train":
             self.sequence_data = raw_data.data[("user", "rated", "item")]["history"]["train"]

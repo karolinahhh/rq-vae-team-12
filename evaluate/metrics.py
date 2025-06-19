@@ -62,15 +62,17 @@ class GiniCoefficient:
 
 
 class TopKAccumulator:
-    def __init__(self, ks=[1, 5, 10]):
+    def __init__(self, ks=[1, 5, 10], popularity_dict=None, user_gap_p=None):
         self.ks = ks
+        self.popularity_dict = popularity_dict or {}
+        self.user_gap_p = user_gap_p or {}
         self.reset()
 
     def reset(self):
         self.total = 0
         self.metrics = defaultdict(float)
 
-    def accumulate(self, actual: Tensor, top_k: Tensor, tokenizer=None) -> None:
+    def accumulate(self, actual: Tensor, top_k: Tensor, user_ids: Tensor, tokenizer=None) -> None:
         B, D = actual.shape
         pos_match = rearrange(actual, "b d -> b 1 d") == top_k
         for i in range(D):
@@ -90,8 +92,28 @@ class TopKAccumulator:
         for b in range(B):
             gold_docs = actual[b]
             pred_docs = top_k[b]
+            user_id = user_ids[b].item() ####
             for k in self.ks:
                 topk_pred = pred_docs[:k]
+                
+                ########### Popularity-aware fairness (GAP)
+                print("topk_pred:", topk_pred)
+                print("Pred key:", str(topk_pred[0].tolist()))
+
+                if self.popularity_dict and self.user_gap_p:
+                    def get_popularity(semantic_id):
+                        key = str(semantic_id.tolist())
+                        return self.popularity_dict.get(key, 0)
+
+                    user_p = self.user_gap_p.get(user_id, 1)  # avoid divide-by-zero
+
+                    pred_pop = torch.tensor([get_popularity(pred) for pred in topk_pred], dtype=torch.float)
+                    GAP_r = pred_pop.mean().item()
+
+                    delta_gap_user = (GAP_r - user_p) / user_p
+                    self.metrics[f"delta_gap_user@{k}"] += delta_gap_user
+
+                ##############
                 hits = torch.any(torch.all(topk_pred == gold_docs, dim=1)).item()
                 self.metrics[f"h@{k}"] += float(hits > 0)
                 self.metrics[f"ndcg@{k}"] += compute_ndcg_for_semantic_ids(
