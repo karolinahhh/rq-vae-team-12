@@ -329,6 +329,13 @@ class EncoderDecoderRetrievalModel(nn.Module):
         seq_mask = batch.seq_mask
         B, N = seq_mask.shape
 
+        # print(f"Batch user_ids shape: {batch.user_ids.shape if batch.user_ids is not None else None}")
+        # print(f"Batch sem_ids shape: {batch.sem_ids.shape if batch.sem_ids is not None else None}")
+        # print(f"Batch sem_ids_fut shape: {batch.sem_ids_fut.shape if batch.sem_ids_fut is not None else None}")
+        # print(f"Batch token_type_ids shape: {batch.token_type_ids.shape if batch.token_type_ids is not None else None}")
+        # print(f"Batch token_type_ids_fut shape: {batch.token_type_ids_fut.shape if batch.token_type_ids_fut is not None else None}")
+        # print(f"Batch seq_mask shape: {batch.seq_mask.shape if batch.seq_mask is not None else None}")
+
         trnsf_out = self._predict(batch)
 
         if self.training or not self.enable_generation:

@@ -71,7 +71,7 @@ class ItemData(Dataset):
         self.item_data, self.item_text, self.item_store_id = (
             raw_data.data["item"]["x"][filt],
             raw_data.data["item"]["text"][filt],
-            raw_data.data["item"]["store_id"][filt],
+            raw_data.data["item"]['brand_id' if dataset == RecDataset.AMAZON else 'store_id'][filt],
         )
 
     def __len__(self):
@@ -133,7 +133,7 @@ class SeqData(Dataset):
         self._max_seq_len = max_seq_len
         self.item_data = raw_data.data["item"]["x"]
         self.split = split_type
-        self.item_store_id = raw_data.data["item"]["store_id"]
+        self.item_store_id = raw_data.data["item"]['brand_id' if dataset == RecDataset.AMAZON else 'store_id']
 
     @property
     def max_seq_len(self):

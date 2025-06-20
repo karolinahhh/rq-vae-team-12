@@ -250,12 +250,16 @@ class AmazonReviews23(InMemoryDataset, PreprocessingMixin):
         pre_transform: Optional[Callable] = None,
         force_reload: bool = False,
         category="store",
+        split_dataset=False,
+        split_qty=50,
     ):
         
         self.split = split
         self.config_name = [f"raw_review_All_{split.capitalize()}", f"raw_meta_All_{split.capitalize()}"]
         self.category = category
         self.store_mapping = {}
+        self.split_dataset = split_dataset
+        self.split_qty = split_qty
         
         super(AmazonReviews23, self).__init__(root, transform, pre_transform, force_reload)
         self.load(self.processed_paths[0], data_cls=HeteroData)
@@ -297,12 +301,17 @@ class AmazonReviews23(InMemoryDataset, PreprocessingMixin):
         image = img_transform(image)
         return image
 
-    def process(self) -> None:
+    def process(self, max_seq_len=20) -> None:
+
         # Reload the Arrow snapshot
-        pdf_reviews = load_from_disk(osp.join(self.raw_dir, self.config_name[0])).to_pandas()
+        if not self.split_dataset:
+            pdf_reviews = load_from_disk(osp.join(self.raw_dir, self.config_name[0])).to_pandas()
+        else:
+            pdf_reviews = load_from_disk(osp.join(self.raw_dir, self.config_name[0]))
+            pdf_reviews = pdf_reviews.select(range(self.split_qty)).to_pandas()
+
         pdf_items = load_from_disk(osp.join(self.raw_dir, self.config_name[1])).to_pandas()
 
-        max_seq_len = 20
         user_ids = list(pdf_reviews["user_id"].unique())
         data_maps = {
             "item2id": {asin: idx for idx, asin in enumerate(pdf_reviews["parent_asin"].unique())},

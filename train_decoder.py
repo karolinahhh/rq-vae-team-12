@@ -57,6 +57,8 @@ def train(
         model_jagged_mode=True,
         vae_hf_model_name="edobotta/rqvae-amazon-beauty",
         category=None,
+        split_dataset=False,
+        split_qty=50,
     ):
 
     if dataset not in (RecDataset.AMAZON, RecDataset.AMAZON23):
@@ -82,6 +84,8 @@ def train(
             dataset=dataset,
             force_process=force_dataset_process,
             split=dataset_split,
+            split_dataset=split_dataset,
+            split_qty=split_qty,
         )
         if category is None
         else ItemData(
@@ -90,6 +94,8 @@ def train(
             force_process=force_dataset_process,
             split=dataset_split,
             category=category,
+            split_dataset=split_dataset,
+            split_qty=split_qty,
         )
     )
 
@@ -99,6 +105,8 @@ def train(
         split_type="train",
         subsample=train_data_subsample,
         split=dataset_split,
+        split_dataset=split_dataset,
+        split_qty=split_qty,
     )
 
     val_dataset = SeqData(
@@ -107,6 +115,8 @@ def train(
         split_type="eval",
         subsample=False,
         split=dataset_split,
+        split_dataset=split_dataset,
+        split_qty=split_qty,
     )
 
     test_dataset = SeqData(
@@ -115,6 +125,8 @@ def train(
         split_type="test",
         subsample=False,
         split=dataset_split,
+        split_dataset=split_dataset,
+        split_qty=split_qty,
     )
 
     train_dataloader = cycle(DataLoader(train_dataset, batch_size=batch_size, shuffle=True))
