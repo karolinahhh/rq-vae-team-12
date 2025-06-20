@@ -24,5 +24,5 @@ train.vae_codebook_mode=%modules.quantize.QuantizeForwardMode.ROTATION_TRICK
 train.force_dataset_process=False
 train.dataset_split="beauty"
 train.do_eval=True
-train.split_dataset=False
-train.split_qty=640
+train.split_dataset=True
+train.split_qty=32768

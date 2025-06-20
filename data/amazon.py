@@ -21,6 +21,13 @@ from PIL import Image
 from torchvision import transforms
 
 
+CONFIG_MAP = {
+    "beauty": "All_Beauty",
+    "sports": "Sports_and_Outdoors",
+    "toys": "Toys_and_Games",
+}
+
+
 def parse(path):
     g = gzip.open(path, "r")
     for l in g:
@@ -240,12 +247,13 @@ class AmazonReviews(InMemoryDataset, PreprocessingMixin):
         with open(brand_mapping_path, "w") as f:
             json.dump(self.brand_mapping, f)
 
+
 class AmazonReviews23(InMemoryDataset, PreprocessingMixin):
 
     def __init__(
         self,
         root: str,
-        split: str, # "All_Beauty", "All_Sports", etc
+        split: str, # "All_Beauty", "Sports_and_Outdoors", "Toys_and_Games" etc
         transform: Optional[Callable] = None,
         pre_transform: Optional[Callable] = None,
         force_reload: bool = False,
@@ -255,7 +263,7 @@ class AmazonReviews23(InMemoryDataset, PreprocessingMixin):
     ):
         
         self.split = split
-        self.config_name = [f"raw_review_All_{split.capitalize()}", f"raw_meta_All_{split.capitalize()}"]
+        self.config_name = [f"raw_review_{CONFIG_MAP.get(split, split)}", f"raw_meta_{CONFIG_MAP.get(split, split)}"]
         self.category = category
         self.store_mapping = {}
         self.split_dataset = split_dataset

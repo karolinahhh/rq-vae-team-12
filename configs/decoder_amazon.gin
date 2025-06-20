@@ -28,5 +28,5 @@ train.decoder_embed_dim=128
 train.model_jagged_mode=True
 # add the category here. If there is none then add None
 train.category="store"
-train.split_dataset=False
-train.split_qty=2560
+train.split_dataset=True
+train.split_qty=32768
