@@ -54,15 +54,9 @@ class ItemData(Dataset):
         if not os.path.exists(processed_data_path) or force_process:
             raw_data.process(max_seq_len=max_seq_len)
 
-        # if train_test_split == "train":
-        #     filt = raw_data.data["item"]["is_train"]
-        # elif train_test_split == "eval":
-        #     filt = ~raw_data.data["item"]["is_train"]
-        # elif train_test_split == "all":
-        #     filt = torch.ones_like(raw_data.data["item"]["x"][:, 0], dtype=bool)
         if train_test_split == "train":
             filt = raw_data.data["item"]["is_train"]
-        elif train_test_split == "val":
+        elif train_test_split == "eval":
             filt = raw_data.data["item"]["is_val"]
         elif train_test_split == "test":
             filt = raw_data.data["item"]["is_test"]
@@ -111,7 +105,6 @@ class SeqData(Dataset):
         **kwargs
     ) -> None:
 
-        # assert (not subsample) or is_train, "Can only subsample on training split."
         assert (not subsample) or split_type == "train", "Can only subsample on training split."
 
         raw_dataset_class = DATASET_NAME_TO_RAW_DATASET[dataset]
@@ -124,36 +117,11 @@ class SeqData(Dataset):
             raw_data.process(max_seq_len=max_seq_len)
 
         self.subsample = subsample
-        ###ORIGINAL
-        # split = "train" if is_train else "test"
-        # self.sequence_data = raw_data.data[("user", "rated", "item")]["history"][split]
-        ######
-        # assert split_type in {"train", "val", "test"}, f"Invalid split_type: {split_type}"
-        # full_data = raw_data.data[("user", "rated", "item")]["history"]["train"]
-        # num_examples = len(full_data["userId"])
-        # train_indices = slice(0, int(0.9 * num_examples))
-        # val_indices = slice(int(0.9 * num_examples), num_examples)
 
-        # if split_type == "train":
-        #     self.sequence_data = {k: v[train_indices] for k, v in full_data.items()}
-        # elif split_type == "val":
-        #     self.sequence_data = {k: v[val_indices] for k, v in full_data.items()}
-        # else:  # test
-        #     self.sequence_data = raw_data.data[("user", "rated", "item")]["history"]["test"]
-        #####
-        assert split_type in {"train", "val", "test"}, f"Invalid split_type: {split_type}"
-        # full_data = raw_data.data[("user", "rated", "item")]["history"]["train"]
-        # num_examples = len(full_data["userId"])
-        # train_indices = slice(0, int(0.9 * num_examples))
-        # val_indices = slice(int(0.9 * num_examples), num_examples)
+        assert split_type in {"train", "eval", "test"}, f"Invalid split_type: {split_type}"
 
-        if split_type == "train":
-            self.sequence_data = raw_data.data[("user", "rated", "item")]["history"]["train"]
-        elif split_type == "val":
-            self.sequence_data = raw_data.data[("user", "rated", "item")]["history"]["eval"]
-        else:  # test
-            self.sequence_data = raw_data.data[("user", "rated", "item")]["history"]["test"]
-        ###########
+        history = raw_data.data[("user","rated","item")].history
+        self.sequence_data = history[split_type]
 
         if not self.subsample:
             self.sequence_data["itemId"] = torch.nn.utils.rnn.pad_sequence(

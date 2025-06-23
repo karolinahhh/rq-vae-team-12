@@ -52,6 +52,8 @@ def train(
     vae_sim_vq=False,
     vae_n_layers=3,
     dataset_split="beauty",
+    strong_generalization=False,
+    reduce_users=False,
 ):
     if wandb_logging:
         params = locals()
@@ -69,6 +71,8 @@ def train(
         force_process=force_dataset_process,
         train_test_split="train" if do_eval else "all",
         split=dataset_split,
+        strong_generalization=strong_generalization,
+        reduce_users=reduce_users,
     )
     train_sampler = BatchSampler(RandomSampler(train_dataset), batch_size, False)
     train_dataloader = DataLoader(
@@ -86,6 +90,8 @@ def train(
             force_process=False,
             train_test_split="eval",
             split=dataset_split,
+            strong_generalization=strong_generalization,
+            reduce_users=reduce_users,
         )
         eval_sampler = BatchSampler(RandomSampler(eval_dataset), batch_size, False)
         eval_dataloader = DataLoader(
@@ -101,6 +107,8 @@ def train(
             force_process=False,
             train_test_split="test",
             split=dataset_split,
+            strong_generalization=strong_generalization,
+            reduce_users=reduce_users,
         )
         test_sampler = BatchSampler(RandomSampler(test_dataset), batch_size, False)
         test_dataloader = DataLoader(
@@ -117,6 +125,8 @@ def train(
             force_process=False,
             train_test_split="all",
             split=dataset_split,
+            strong_generalization=strong_generalization,
+            reduce_users=reduce_users,
         )
         if do_eval
         else train_dataset

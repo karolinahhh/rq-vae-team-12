@@ -64,6 +64,8 @@ def train(
     model_jagged_mode=True,
     vae_hf_model_name="edobotta/rqvae-amazon-beauty",
     category=None,
+    strong_generalization=False,
+    reduce_users=False,
 ):
     if dataset != RecDataset.AMAZON:
         raise Exception(f"Dataset currently not supported: {dataset}.")
@@ -88,6 +90,8 @@ def train(
             dataset=dataset,
             force_process=force_dataset_process,
             split=dataset_split,
+            strong_generalization=strong_generalization,
+            reduce_users=reduce_users,
         )
         if category is None
         else ItemData(
@@ -96,37 +100,29 @@ def train(
             force_process=force_dataset_process,
             split=dataset_split,
             category=category,
-        )
+            strong_generalization=strong_generalization,
+            reduce_users=reduce_users,
+        )   
     )
 
-    # train_dataset = SeqData(
-    #     root=dataset_folder,
-    #     dataset=dataset,
-    #     is_train=True,
-    #     subsample=train_data_subsample,
-    #     split=dataset_split,
-    # )
-    # eval_dataset = SeqData(
-    #     root=dataset_folder,
-    #     dataset=dataset,
-    #     is_train=False,
-    #     subsample=False,
-    #     split=dataset_split,
-    # )
     train_dataset = SeqData(
         root=dataset_folder,
         dataset=dataset,
         split_type="train",
         subsample=train_data_subsample,
         split=dataset_split,
+        strong_generalization=strong_generalization,
+        reduce_users=reduce_users,
     )
 
     val_dataset = SeqData(
         root=dataset_folder,
         dataset=dataset,
-        split_type="val",
+        split_type="eval",
         subsample=False,
         split=dataset_split,
+        strong_generalization=strong_generalization,
+        reduce_users=reduce_users,
     )
 
     test_dataset = SeqData(
@@ -135,17 +131,11 @@ def train(
         split_type="test",
         subsample=False,
         split=dataset_split,
+        strong_generalization=strong_generalization,
+        reduce_users=reduce_users,
     )
     #########
 
-    # train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-
-    # train_dataloader = cycle(train_dataloader)
-    # eval_dataloader = DataLoader(eval_dataset, batch_size=batch_size, shuffle=True)
-
-    # train_dataloader, eval_dataloader = accelerator.prepare(
-    #     train_dataloader, eval_dataloader
-    # )
     train_dataloader = cycle(DataLoader(train_dataset, batch_size=batch_size, shuffle=True))
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
