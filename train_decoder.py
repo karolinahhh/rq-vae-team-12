@@ -126,7 +126,7 @@ def train(
         subsample=train_data_subsample,
         split=dataset_split,
     )
-    # print("train_dataset", train_dataset[0])
+    print("train_dataset", train_dataset[0])
     # print("shape: ", train_dataset)
 
 
@@ -184,6 +184,7 @@ def train(
     def compute_user_history_popularity(train_dataset, tokenizer):
         user_pop = defaultdict(list)
         global_pop = Counter()
+        user_brand_counts = defaultdict(Counter)
 
         for sample in train_dataset:
             user_id = sample.user_ids.item()  # assumes batch size 1
@@ -191,20 +192,32 @@ def train(
             for item_id in ids:
                 # tokenize that single item into semantic ID
                 sem_id = tokenizer.cached_ids[item_id].to(device)
+                print("sem_id:", sem_id)
                 # convert to string for search purposes
                 key = str(sem_id.tolist())
+                # track popularity
                 user_pop[user_id].append(key)
                 global_pop[key] += 1
+                # track brand 
+                brand = tokenizer.map_to_category.get(key, "unknown")
+                # print("brand:", brand)
+                user_brand_counts[user_id][brand] += 1
 
         # Map user_id → average historical item popularity
         user_gap_p = {}
         for user, items in user_pop.items():
             popularities = [global_pop[item] for item in items]
             user_gap_p[user] = np.mean(popularities)
+        #brand distributions
+        user_brand_dists = {
+            user: {b: count / sum(brand_counts.values()) for b, count in brand_counts.items()}
+            for user, brand_counts in user_brand_counts.items()
+        }
+        print("user_brand_dists:", user_brand_dists)
 
-        return user_gap_p, dict(global_pop)
+        return user_gap_p, dict(global_pop), user_brand_dists
     print("Computing user history popularity...")
-    user_gap_p_dict, global_popularity_dict = compute_user_history_popularity(train_dataset, tokenizer)
+    user_gap_p_dict, global_popularity_dict, user_brand_dists_dict = compute_user_history_popularity(train_dataset, tokenizer)
     print("User history popularity computed.")
     
     if push_vae_to_hf:
@@ -243,7 +256,7 @@ def train(
 
     model, optimizer, lr_scheduler = accelerator.prepare(model, optimizer, lr_scheduler)
 
-    metrics_accumulator = TopKAccumulator(ks=[1, 5, 10], popularity_dict=global_popularity_dict, user_gap_p=user_gap_p_dict) ########
+    metrics_accumulator = TopKAccumulator(ks=[1, 5, 10], popularity_dict=global_popularity_dict, user_gap_p=user_gap_p_dict, user_brand_dists=user_brand_dists_dict ) ########
     num_params = sum(p.numel() for p in model.parameters())
     print(f"Device: {device}, Num Parameters: {num_params}")
     with tqdm(
@@ -362,7 +375,7 @@ def train(
     # Final evaluation on test set after training
     model.eval()
     model.enable_generation = True
-    test_metrics_accumulator = TopKAccumulator(ks=[1, 5, 10], popularity_dict=global_popularity_dict, user_gap_p=user_gap_p_dict)######
+    test_metrics_accumulator = TopKAccumulator(ks=[1, 5, 10], popularity_dict=global_popularity_dict, user_gap_p=user_gap_p_dict, user_brand_dists=user_brand_dists_dict)######
 
     with tqdm(
         test_dataloader,
@@ -378,7 +391,7 @@ def train(
             )
             actual, top_k, user_ids = tokenized_data.sem_ids_fut, generated.sem_ids, data.user_ids
             # test_metrics_accumulator.accumulate(actual=actual, top_k=top_k, tokenizer=tokenizer)
-            metrics_accumulator.accumulate(actual=actual, top_k=top_k, user_ids=user_ids, tokenizer=tokenizer)
+            test_metrics_accumulator.accumulate(actual=actual, top_k=top_k, user_ids=user_ids, tokenizer=tokenizer)
 
     test_eval_metrics = test_metrics_accumulator.reduce()
 

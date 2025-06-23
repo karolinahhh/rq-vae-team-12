@@ -62,10 +62,12 @@ class GiniCoefficient:
 
 
 class TopKAccumulator:
-    def __init__(self, ks=[1, 5, 10], popularity_dict=None, user_gap_p=None):
+    def __init__(self, ks=[1, 5, 10], popularity_dict=None, user_gap_p=None, user_brand_dists=None):
         self.ks = ks
         self.popularity_dict = popularity_dict or {}
         self.user_gap_p = user_gap_p or {}
+        self.user_brand_dists = user_brand_dists or {}
+        self.coverage_sets = defaultdict(set)
         self.reset()
 
     def reset(self):
@@ -95,10 +97,11 @@ class TopKAccumulator:
             user_id = user_ids[b].item() ####
             for k in self.ks:
                 topk_pred = pred_docs[:k]
-                
+                # print(f"User {user_id} | pred_docs shape: {pred_docs.shape} | pred_docs: {pred_docs}")
+
                 ########### Popularity-aware fairness (GAP)
-                print("topk_pred:", topk_pred)
-                print("Pred key:", str(topk_pred[0].tolist()))
+                # print("topk_pred:", topk_pred)
+                # print("Pred key:", str(topk_pred[0].tolist()))
 
                 if self.popularity_dict and self.user_gap_p:
                     def get_popularity(semantic_id):
@@ -119,17 +122,58 @@ class TopKAccumulator:
                 self.metrics[f"ndcg@{k}"] += compute_ndcg_for_semantic_ids(
                     pred_docs, gold_docs, k
                 )
+                ######### Top-K coverage #############
+                for pred in topk_pred:
+                    pred_tuple = tuple(pred.tolist())  
+                    self.coverage_sets[k].add(pred_tuple)
                 # if the tokinzer is given then for each prediction find the catergoy and add it to the list and then caclulate the gini coefficient
                 if tokenizer is not None:
+                    ############ Gini coefficient over brands #############
                     list_gini = []
                     for pred in topk_pred:
-                        idx = str(pred.tolist()[:-1])
+                        # idx = str(pred.tolist()[:-1]) 
+                        idx = str(pred.tolist()) #don't remove the deduplication token
                         category = tokenizer.map_to_category[idx]
                         list_gini.append({"id": idx, "category": category})
                     self.metrics[f"gini@{k}"] += GiniCoefficient().calculate_list_gini(
                         list_gini, key="category"
                     )
+                    ############ KL divergence over brand distribution #############
+                    if self.user_brand_dists:
+                        # Get predicted brand counts
+                        pred_brands = [
+                            tokenizer.map_to_category.get(str(pred.tolist()), "UNKNOWN")
+                            for pred in topk_pred
+                        ]
+                        pred_counts = defaultdict(int)
+                        for b in pred_brands:
+                            pred_counts[b] += 1
+                        # print("pred_counts:", pred_counts) 
+
+                        total_pred = sum(pred_counts.values())
+                        pred_dist = {k: v / total_pred for k, v in pred_counts.items()}
+
+                        # Get user historical brand distribution
+                        hist_dist = self.user_brand_dists.get(user_id, {})
+                        all_brands = set(hist_dist.keys()) | set(pred_dist.keys())
+
+                        p = torch.tensor([hist_dist.get(b, 1e-8) for b in all_brands])
+                        q = torch.tensor([pred_dist.get(b, 1e-8) for b in all_brands])
+
+                        # KL divergence: D_KL(p || q)
+                        kl_div = torch.sum(p * torch.log(p / q)).item()
+                        # print("kl_div:", kl_div)
+                        
+                        self.metrics[f"kl_brand@{k}"] += kl_div
+                
         self.total += B
 
+    # def reduce(self) -> dict:
+    #     return {k: v / self.total for k, v in self.metrics.items()}
     def reduce(self) -> dict:
-        return {k: v / self.total for k, v in self.metrics.items()}
+        result = {k: v / self.total for k, v in self.metrics.items()}
+        for k in self.ks:
+            total_preds = self.total * k
+            unique_preds = len(self.coverage_sets.get(k, []))
+            result[f"coverage@{k}"] = unique_preds / total_preds if total_preds > 0 else 0.0
+        return result

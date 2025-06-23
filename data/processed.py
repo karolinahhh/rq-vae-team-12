@@ -77,6 +77,8 @@ class ItemData(Dataset):
             raw_data.data["item"]["brand_id"][filt],
         )
 
+        print("Brand IDs in item data:", self.item_brand_id)
+
     def __len__(self):
         return self.item_data.shape[0]
 
@@ -118,6 +120,7 @@ class SeqData(Dataset):
         max_seq_len = DATASET_NAME_TO_MAX_SEQ_LEN[dataset]
 
         raw_data = raw_dataset_class(root=root, *args, **kwargs)
+        print("raw_data", raw_data)
 
         processed_data_path = raw_data.processed_paths[0]
         if not os.path.exists(processed_data_path) or force_process:
@@ -128,19 +131,6 @@ class SeqData(Dataset):
         # split = "train" if is_train else "test"
         # self.sequence_data = raw_data.data[("user", "rated", "item")]["history"][split]
         ######
-        # assert split_type in {"train", "val", "test"}, f"Invalid split_type: {split_type}"
-        # full_data = raw_data.data[("user", "rated", "item")]["history"]["train"]
-        # num_examples = len(full_data["userId"])
-        # train_indices = slice(0, int(0.9 * num_examples))
-        # val_indices = slice(int(0.9 * num_examples), num_examples)
-
-        # if split_type == "train":
-        #     self.sequence_data = {k: v[train_indices] for k, v in full_data.items()}
-        # elif split_type == "val":
-        #     self.sequence_data = {k: v[val_indices] for k, v in full_data.items()}
-        # else:  # test
-        #     self.sequence_data = raw_data.data[("user", "rated", "item")]["history"]["test"]
-        #####
         assert split_type in {"train", "val", "test"}, f"Invalid split_type: {split_type}"
 
         if split_type == "train":
@@ -163,6 +153,7 @@ class SeqData(Dataset):
         self.split = split_type
 
         self.item_brand_id = raw_data.data["item"]["brand_id"]
+        
 
     @property
     def max_seq_len(self):
