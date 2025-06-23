@@ -45,14 +45,17 @@ class AmazonReviews(InMemoryDataset, PreprocessingMixin):
         transform: Optional[Callable] = None,
         pre_transform: Optional[Callable] = None,
         force_reload: bool = False,
-        category="brand",
+        category: str = "brand",
+        strong_generalization: bool = False,
+        reduced_user_set: bool = False
     ) -> None:
         self.split = split
         self.brand_mapping = {}  # Dictionary to store brand_id -> brand_name mapping
         self.category = category
-        super(AmazonReviews, self).__init__(
-            root, transform, pre_transform, force_reload
-        )
+        self.strong_generalization = strong_generalization
+        self.reduced_user_set = reduced_user_set
+
+        super(AmazonReviews, self).__init__(root, transform, pre_transform, force_reload)
         self.load(self.processed_paths[0], data_cls=HeteroData)
 
     @property
@@ -95,39 +98,65 @@ class AmazonReviews(InMemoryDataset, PreprocessingMixin):
         """
         return self.brand_mapping
 
-    def train_test_split(self, max_seq_len=20):
+    def train_test_split(self, max_seq_len=20, split_by_user=False):
         splits = ["train", "eval", "test"]
         sequences = {sp: defaultdict(list) for sp in splits}
+        user_sequences = []
         user_ids = []
-        with open(
-            os.path.join(self.raw_dir, self.split, "sequential_data.txt"), "r"
-        ) as f:
+
+        with open(os.path.join(self.raw_dir, self.split, "sequential_data.txt"), "r") as f:
             for line in f:
+
                 parsed_line = list(map(int, line.strip().split()))
-                user_ids.append(parsed_line[0])
+                user_id = parsed_line[0]
                 items = [self._remap_ids(id) for id in parsed_line[1:]]
+                if len(items) < 3:
+                    continue
+                user_sequences.append((user_id, items))
 
-                # We keep the whole sequence without padding. Allows flexible training-time subsampling.
+            if split_by_user:
+
+                unique_users = list(set([uid for uid, _ in user_sequences]))
+                rng = np.random.default_rng(seed=42)
+                rng.shuffle(unique_users)
+
+                n_total = len(unique_users)
+                n_train = int(0.8 * n_total)
+                n_val = int(0.1 * n_total)
+
+                train_users = set(unique_users[:n_train])
+                val_users = set(unique_users[n_train:n_train + n_val])
+                test_users = set(unique_users[n_train + n_val:])
+
+                if self.reduced_user_set:
+                    # Reduce training users by 20%
+                    train_users = set(list(train_users)[:int(len(train_users) * 0.8)])
+
+                user_split = {}
+                for u in train_users: 
+                    user_split[u] = "train"
+                for u in val_users: 
+                    user_split[u] = "eval"
+                for u in test_users: 
+                    user_split[u] = "test"
+            else:
+                user_split = defaultdict(lambda: "train")
+
+            for user_id, items in user_sequences:
+                split = user_split[user_id]
+
                 train_items = items[:-2]
-                sequences["train"]["itemId"].append(train_items)
-                sequences["train"]["itemId_fut"].append(items[-2])
+                eval_items = items[-(max_seq_len + 2):-2]
+                test_items = items[-(max_seq_len + 1):-1]
 
-                eval_items = items[-(max_seq_len + 2) : -2]
-                sequences["eval"]["itemId"].append(
-                    eval_items + [-1] * (max_seq_len - len(eval_items))
-                )
-                sequences["eval"]["itemId_fut"].append(items[-2])
+                sequences[split]["itemId"].append(eval_items + [-1] * (max_seq_len - len(eval_items)) if split == "eval" else test_items + [-1] * (max_seq_len - len(test_items)) if split == "test" else train_items)
+                sequences[split]["itemId_fut"].append(items[-1] if split == "test" else items[-2])
+                sequences[split]["userId"].append(user_id)
 
-                test_items = items[-(max_seq_len + 1) : -1]
-                sequences["test"]["itemId"].append(
-                    test_items + [-1] * (max_seq_len - len(test_items))
-                )
-                sequences["test"]["itemId_fut"].append(items[-1])
+            for sp in splits:
+                sequences[sp] = pl.from_dict(sequences[sp])
 
-        for sp in splits:
-            sequences[sp]["userId"] = user_ids
-            sequences[sp] = pl.from_dict(sequences[sp])
-        return sequences
+            return sequences
 
     def process(self, max_seq_len=20) -> None:
         data = HeteroData()
@@ -136,7 +165,7 @@ class AmazonReviews(InMemoryDataset, PreprocessingMixin):
             data_maps = json.load(f)
 
         # Construct user sequences
-        sequences = self.train_test_split(max_seq_len=max_seq_len)
+        sequences = self.train_test_split(max_seq_len=max_seq_len, split_by_user=self.strong_generalization)
         data["user", "rated", "item"].history = {
             k: self._df_to_tensor_dict(v, ["itemId"]) for k, v in sequences.items()
         }
@@ -194,15 +223,12 @@ class AmazonReviews(InMemoryDataset, PreprocessingMixin):
         item_emb = self._encode_text_feature(sentences)
         data["item"].x = item_emb
         data["item"].text = np.array(sentences)
-        data["item"].brand_id = np.array(
-            brand_ids
-        )  # Store brand_id instead of brand name
+        data["item"].brand_id = np.array(brand_ids)  # Store brand_id instead of brand name
 
         # Save the brand mapping to the data object as well
         data["brand_mapping"] = self.brand_mapping
 
-        gen = torch.Generator()
-        gen.manual_seed(42)
+        gen = torch.Generator().manual_seed(42)
         data["item"].is_train = torch.rand(item_emb.shape[0], generator=gen) > 0.05
 
         ########## Add train/val/test item splits ##########
@@ -228,15 +254,9 @@ class AmazonReviews(InMemoryDataset, PreprocessingMixin):
         is_val[val_ids] = True
         is_test[test_ids] = True
 
-        # data["item"].is_train = is_train
-        # data["item"].is_val = is_val
-        # data["item"].is_test = is_test
         data["item"]["is_train"] = is_train
         data["item"]["is_val"] = is_val
         data["item"]["is_test"] = is_test
-
-        print("is_val in item:", "is_val" in data["item"])
-        ##########
 
         self.save([data], self.processed_paths[0])
 

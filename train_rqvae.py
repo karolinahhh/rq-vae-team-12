@@ -70,14 +70,20 @@ def train(
 
     device = accelerator.device
 
+    amazon23_kwargs = {}
+    if dataset == RecDataset.AMAZON23:
+        amazon23_kwargs = {
+            "split_dataset": split_dataset,
+            "split_qty": split_qty,
+        }
+
     train_dataset = ItemData(
         root=dataset_folder,
         dataset=dataset,
         force_process=force_dataset_process,
         train_test_split="train" if do_eval else "all",
         split=dataset_split,
-        split_dataset=split_dataset,
-        split_qty=split_qty,
+        **amazon23_kwargs,
     )
     train_sampler = BatchSampler(RandomSampler(train_dataset), batch_size, False)
     train_dataloader = DataLoader(
@@ -95,8 +101,7 @@ def train(
             force_process=False,
             train_test_split="val",
             split=dataset_split,
-            split_dataset=split_dataset,
-            split_qty=split_qty,
+            **amazon23_kwargs,
         )
         eval_sampler = BatchSampler(RandomSampler(eval_dataset), batch_size, False)
         eval_dataloader = DataLoader(
@@ -112,8 +117,7 @@ def train(
             force_process=False,
             train_test_split="test",
             split=dataset_split,
-            split_dataset=split_dataset,
-            split_qty=split_qty,
+            **amazon23_kwargs,
         )
         test_sampler = BatchSampler(RandomSampler(test_dataset), batch_size, False)
         test_dataloader = DataLoader(
@@ -130,8 +134,7 @@ def train(
             force_process=False,
             train_test_split="all",
             split=dataset_split,
-            split_dataset=split_dataset,
-            split_qty=split_qty,
+            **amazon23_kwargs,
         ) if do_eval else train_dataset
     )
 

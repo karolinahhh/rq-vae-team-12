@@ -43,6 +43,7 @@ def evaluate_decoder(
     # Inference
     ks: list = [1, 5, 10],
     temperature: float = 1.0,
+    split_type: str = "test",
 ):
     """
     Load a trained decoder and run evaluation on the held‐out split,
@@ -66,7 +67,7 @@ def evaluate_decoder(
     eval_seq = SeqData(
         root=dataset_folder,
         dataset=dataset,
-        split_type="eval",
+        split_type=split_type,
         subsample=False,
         split=dataset_split,
     )

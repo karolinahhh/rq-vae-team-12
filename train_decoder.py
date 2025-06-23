@@ -64,6 +64,13 @@ def train(
     if dataset not in (RecDataset.AMAZON, RecDataset.AMAZON23):
         raise Exception(f"Dataset currently not supported: {dataset}.")
 
+    amazon23_kwargs = {}
+    if dataset == RecDataset.AMAZON23:
+        amazon23_kwargs = {
+            "split_dataset": split_dataset,
+            "split_qty": split_qty,
+        }
+
     if wandb_logging:
         params = locals()
 
@@ -84,8 +91,7 @@ def train(
             dataset=dataset,
             force_process=force_dataset_process,
             split=dataset_split,
-            split_dataset=split_dataset,
-            split_qty=split_qty,
+            **amazon23_kwargs,
         )
         if category is None
         else ItemData(
@@ -94,8 +100,7 @@ def train(
             force_process=force_dataset_process,
             split=dataset_split,
             category=category,
-            split_dataset=split_dataset,
-            split_qty=split_qty,
+            **amazon23_kwargs,
         )
     )
 
@@ -105,8 +110,7 @@ def train(
         split_type="train",
         subsample=train_data_subsample,
         split=dataset_split,
-        split_dataset=split_dataset,
-        split_qty=split_qty,
+        **amazon23_kwargs,
     )
 
     val_dataset = SeqData(
@@ -115,8 +119,7 @@ def train(
         split_type="eval",
         subsample=False,
         split=dataset_split,
-        split_dataset=split_dataset,
-        split_qty=split_qty,
+        **amazon23_kwargs,
     )
 
     test_dataset = SeqData(
@@ -125,8 +128,7 @@ def train(
         split_type="test",
         subsample=False,
         split=dataset_split,
-        split_dataset=split_dataset,
-        split_qty=split_qty,
+        **amazon23_kwargs,
     )
 
     train_dataloader = cycle(DataLoader(train_dataset, batch_size=batch_size, shuffle=True))
