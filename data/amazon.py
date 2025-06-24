@@ -54,12 +54,20 @@ class AmazonReviews(InMemoryDataset, PreprocessingMixin):
         self.load(self.processed_paths[0], data_cls=HeteroData)
 
     @property
+    def raw_dir(self) -> str:
+        return osp.join(self.root, 'raw')
+
+    @property
+    def processed_dir(self) -> str:
+        return osp.join(self.root, f'processed/{self.split}/{self.mode}')
+
+    @property
     def raw_file_names(self) -> List[str]:
         return [self.split]
 
     @property
     def processed_file_names(self) -> str:
-        return f"{self.mode}/data_{self.split}.pt"
+        return f"data_{self.split}.pt"
 
     def download(self) -> None:
         path = download_google_url(self.gdrive_id, self.root, self.gdrive_filename)
@@ -269,7 +277,7 @@ class AmazonReviews(InMemoryDataset, PreprocessingMixin):
 
         # Save brand mapping to a separate file for easy access
         brand_mapping_path = os.path.join(
-            self.processed_dir, f"{self.mode}/brand_mapping_{self.split}.json"
+            self.processed_dir, f"brand_mapping_{self.split}.json"
         )
         with open(brand_mapping_path, "w") as f:
             json.dump(self.brand_mapping, f)

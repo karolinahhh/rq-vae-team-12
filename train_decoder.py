@@ -4,6 +4,9 @@ import gin
 import torch
 import wandb
 
+os.environ["TORCH_LOGS"] = "+dynamo"
+os.environ["TORCHDYNAMO_VERBOSE"] = "1"
+
 from accelerate import Accelerator
 from data.processed import ItemData
 from data.processed import RecDataset
@@ -23,6 +26,8 @@ from torch.utils.data import BatchSampler
 from torch.utils.data import DataLoader
 from torch.utils.data import RandomSampler
 from tqdm import tqdm
+from collections import defaultdict, Counter
+import numpy as np
 
 
 @gin.configurable
@@ -143,6 +148,7 @@ def train(
     train_dataloader, val_dataloader, test_dataloader = accelerator.prepare(
         train_dataloader, val_dataloader, test_dataloader
     )
+
     ##############
 
     tokenizer = SemanticIdTokenizer(
@@ -158,6 +164,45 @@ def train(
     )
     tokenizer = accelerator.prepare(tokenizer)
     tokenizer.precompute_corpus_ids(item_dataset)
+
+    device = next(tokenizer.parameters()).device
+
+    @torch.no_grad
+    @torch._dynamo.disable
+    def compute_user_history_popularity(train_dataset, tokenizer):
+        user_pop = defaultdict(list)
+        global_pop = Counter()
+        user_brand_counts = defaultdict(Counter)
+
+        for sample in train_dataset:
+            user_id = sample.user_ids.item()  # assumes batch size 1
+            ids = sample.ids[sample.ids >= 0]  # ignore padding (-1s)
+            for item_id in ids:
+                # tokenize that single item into semantic ID
+                sem_id = tokenizer.cached_ids[item_id].to(device)
+                # convert to string for search purposes
+                key = str(sem_id.tolist())
+                # track popularity
+                user_pop[user_id].append(key)
+                global_pop[key] += 1
+                # track brand 
+                brand = tokenizer.map_to_category.get(key, "unknown")
+                user_brand_counts[user_id][brand] += 1
+
+        # Map user_id → average historical item popularity
+        user_gap_p = {}
+        for user, items in user_pop.items():
+            popularities = [global_pop[item] for item in items]
+            user_gap_p[user] = np.mean(popularities)
+        #brand distributions
+        user_brand_dists = {
+            user: {b: count / sum(brand_counts.values()) for b, count in brand_counts.items()}
+            for user, brand_counts in user_brand_counts.items()
+        }
+
+        return user_gap_p, dict(global_pop), user_brand_dists
+    
+    user_gap_p_dict, global_popularity_dict, user_brand_dists_dict = compute_user_history_popularity(train_dataset, tokenizer)
 
     if push_vae_to_hf:
         login()
@@ -195,9 +240,10 @@ def train(
 
     model, optimizer, lr_scheduler = accelerator.prepare(model, optimizer, lr_scheduler)
 
-    metrics_accumulator = TopKAccumulator(ks=[1, 5, 10])
+    metrics_accumulator = TopKAccumulator(ks=[1, 5, 10], popularity_dict=global_popularity_dict, user_gap_p=user_gap_p_dict, user_brand_dists=user_brand_dists_dict)
     num_params = sum(p.numel() for p in model.parameters())
     print(f"Device: {device}, Num Parameters: {num_params}")
+
     with tqdm(
         initial=start_iter,
         total=start_iter + iterations,
@@ -267,10 +313,10 @@ def train(
                         generated = model.generate_next_sem_id(
                             tokenized_data, top_k=True, temperature=1
                         )
-                        actual, top_k = tokenized_data.sem_ids_fut, generated.sem_ids
+                        actual, top_k, user_ids = tokenized_data.sem_ids_fut, generated.sem_ids, data.user_ids
                         # add the tokinzer
                         metrics_accumulator.accumulate(
-                            actual=actual, top_k=top_k, tokenizer=tokenizer
+                            actual=actual, top_k=top_k, user_ids=user_ids, tokenizer=tokenizer
                         )
                 eval_metrics = metrics_accumulator.reduce()
 
@@ -308,7 +354,7 @@ def train(
     # Final evaluation on test set after training
     model.eval()
     model.enable_generation = True
-    test_metrics_accumulator = TopKAccumulator(ks=[1, 5, 10])
+    test_metrics_accumulator = TopKAccumulator(ks=[1, 5, 10], popularity_dict=global_popularity_dict, user_gap_p=user_gap_p_dict, user_brand_dists=user_brand_dists_dict)
 
     with tqdm(
         test_dataloader,
@@ -322,8 +368,8 @@ def train(
             generated = model.generate_next_sem_id(
                 tokenized_data, top_k=True, temperature=1
             )
-            actual, top_k = tokenized_data.sem_ids_fut, generated.sem_ids
-            test_metrics_accumulator.accumulate(actual=actual, top_k=top_k, tokenizer=tokenizer)
+            actual, top_k, user_ids = tokenized_data.sem_ids_fut, generated.sem_ids, data.user_ids
+            test_metrics_accumulator.accumulate(actual=actual, top_k=top_k, user_ids=user_ids, tokenizer=tokenizer)
 
     test_eval_metrics = test_metrics_accumulator.reduce()
 

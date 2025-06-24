@@ -65,6 +65,7 @@ class SemanticIdTokenizer(nn.Module):
 
         # create a map_idx_to_category in order to cache everything!
         self.map_to_category = {}
+        # self.map_to_brand = {}
 
     def _get_hits(self, query: Tensor, key: Tensor) -> Tensor:
         return (rearrange(key, "b d -> 1 b d") == rearrange(query, "b d -> b 1 d")).all(
@@ -94,15 +95,12 @@ class SemanticIdTokenizer(nn.Module):
             shuffle=False,
             collate_fn=lambda batch: batch[0],
         )
+        all_brand_ids = []
         for batch in dataloader:
             output = batch_to(batch, self.rq_vae.device)
             batch_ids = self.forward(output).sem_ids
-            # take the output and the sem ids that were created and for each sem id map it to its brand
-            for idx, item in enumerate(batch_ids):
-                if str(item.tolist()) not in self.map_to_category:
-                    self.map_to_category[str(item.tolist())] = output.x_brand_id[
-                        idx
-                    ].item()
+            all_brand_ids.extend(output.x_brand_id.tolist())
+
             # Detect in-batch duplicates
             is_hit = self._get_hits(batch_ids, batch_ids)
             hits = torch.tril(is_hit, diagonal=-1).sum(axis=-1)
@@ -118,6 +116,14 @@ class SemanticIdTokenizer(nn.Module):
         # Concatenate new column to deduplicate ids
         dedup_dim_tensor = pack(dedup_dim, "*")[0]
         self.cached_ids = pack([cached_ids, dedup_dim_tensor], "b *")[0]
+
+        # Populate category/brand map using final cached_ids with dedup token
+        for idx in range(self.cached_ids.shape[0]):
+            sem_id_with_dedup = self.cached_ids[idx]
+            sem_id_key = str(sem_id_with_dedup.tolist())
+            if sem_id_key not in self.map_to_category:
+                self.map_to_category[sem_id_key] = all_brand_ids[idx]
+
         return self.cached_ids
 
     @torch.no_grad
