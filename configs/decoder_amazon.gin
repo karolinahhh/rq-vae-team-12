@@ -26,7 +26,10 @@ train.attn_embed_dim=512
 train.attn_layers=8
 train.decoder_embed_dim=128
 train.model_jagged_mode=True
-# add the category here. If there is none then add None
+# add the category here. If there is none then add None. Use 'store' for AMAZON23, 'brand' for others
 train.category="brand"
 train.strong_generalization=False
 train.reduce_users=False
+# Set to True for AMAZON23, False for others
+train.split_dataset=False
+train.split_qty=16384

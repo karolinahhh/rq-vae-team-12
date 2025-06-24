@@ -5,19 +5,14 @@ import numpy as np
 import wandb
 
 from accelerate import Accelerator
-from data.processed import ItemData
-from data.processed import RecDataset
-from data.utils import batch_to
-from data.utils import cycle
-from data.utils import next_batch
+from data.processed import ItemData, RecDataset, SeqData
+from data.utils import batch_to, cycle, next_batch
 from modules.rqvae import RqVae
 from modules.quantize import QuantizeForwardMode
 from modules.tokenizer.semids import SemanticIdTokenizer
 from modules.utils import parse_config
 from torch.optim import AdamW
-from torch.utils.data import BatchSampler
-from torch.utils.data import DataLoader
-from torch.utils.data import RandomSampler
+from torch.utils.data import BatchSampler, DataLoader, RandomSampler
 from tqdm import tqdm
 
 
@@ -54,6 +49,8 @@ def train(
     dataset_split="beauty",
     strong_generalization=False,
     reduce_users=False,
+    split_dataset=False,
+    split_qty=50,
 ):
     if wandb_logging:
         params = locals()
@@ -65,6 +62,13 @@ def train(
 
     device = accelerator.device
 
+    amazon23_kwargs = {}
+    if dataset == RecDataset.AMAZON23:
+        amazon23_kwargs = {
+            "split_dataset": split_dataset,
+            "split_qty": split_qty,
+        }
+
     train_dataset = ItemData(
         root=dataset_folder,
         dataset=dataset,
@@ -73,6 +77,7 @@ def train(
         split=dataset_split,
         strong_generalization=strong_generalization,
         reduce_users=reduce_users,
+        **amazon23_kwargs,
     )
     train_sampler = BatchSampler(RandomSampler(train_dataset), batch_size, False)
     train_dataloader = DataLoader(
@@ -92,6 +97,7 @@ def train(
             split=dataset_split,
             strong_generalization=strong_generalization,
             reduce_users=reduce_users,
+            **amazon23_kwargs,
         )
         eval_sampler = BatchSampler(RandomSampler(eval_dataset), batch_size, False)
         eval_dataloader = DataLoader(
@@ -109,6 +115,7 @@ def train(
             split=dataset_split,
             strong_generalization=strong_generalization,
             reduce_users=reduce_users,
+            **amazon23_kwargs,
         )
         test_sampler = BatchSampler(RandomSampler(test_dataset), batch_size, False)
         test_dataloader = DataLoader(
@@ -127,6 +134,7 @@ def train(
             split=dataset_split,
             strong_generalization=strong_generalization,
             reduce_users=reduce_users,
+            **amazon23_kwargs,
         )
         if do_eval
         else train_dataset
@@ -155,7 +163,7 @@ def train(
 
     if wandb_logging and accelerator.is_main_process:
         wandb.login()
-        run = wandb.init(project="rq-vae-training", config=params)
+        run = wandb.init(entity="joselgc-uva", project="rq-vae-training", config=params)
 
     start_iter = 0
     if pretrained_rqvae_path is not None:

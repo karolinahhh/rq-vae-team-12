@@ -3,7 +3,7 @@ import os
 import random
 import torch
 
-from data.amazon import AmazonReviews
+from data.amazon import AmazonReviews, AmazonReviews23
 from data.ml1m import RawMovieLens1M
 from data.ml32m import RawMovieLens32M
 from data.schemas import SeqBatch
@@ -18,12 +18,14 @@ PROCESSED_MOVIE_LENS_SUFFIX = "/processed/data.pt"
 @gin.constants_from_enum
 class RecDataset(Enum):
     AMAZON = 1
-    ML_1M = 2
-    ML_32M = 3
+    AMAZON23 = 2
+    ML_1M = 3
+    ML_32M = 4
 
 
 DATASET_NAME_TO_RAW_DATASET = {
     RecDataset.AMAZON: AmazonReviews,
+    RecDataset.AMAZON23: AmazonReviews23,
     RecDataset.ML_1M: RawMovieLens1M,
     RecDataset.ML_32M: RawMovieLens32M,
 }
@@ -31,6 +33,7 @@ DATASET_NAME_TO_RAW_DATASET = {
 
 DATASET_NAME_TO_MAX_SEQ_LEN = {
     RecDataset.AMAZON: 20,
+    RecDataset.AMAZON23: 20,
     RecDataset.ML_1M: 200,
     RecDataset.ML_32M: 200,
 }
@@ -125,7 +128,7 @@ class SeqData(Dataset):
 
         if not self.subsample:
             self.sequence_data["itemId"] = torch.nn.utils.rnn.pad_sequence(
-                [torch.tensor(l[-max_seq_len:]) for l in self.sequence_data["itemId"]],
+                [l[-max_seq_len:].detach().clone() if isinstance(l, Tensor) else torch.tensor(l[-max_seq_len:]) for l in self.sequence_data["itemId"]],
                 batch_first=True,
                 padding_value=-1,
             )

@@ -44,6 +44,13 @@ class PreprocessingMixin:
             sentences=text_feat, show_progress_bar=True, convert_to_tensor=True
         ).cpu()
         return embeddings
+    
+    @staticmethod
+    def _encode_image_feature(image_list, model=None):
+        if model is None:
+            model = SentenceTransformer("sentence-transformers/clip-ViT-L-14")
+        embeddings = model.encode(images=image_list, show_progress_bar=True, convert_to_tensor=True).cpu()
+        return embeddings
 
     @staticmethod
     def _rolling_window(group, features, window_size=200, stride=1):

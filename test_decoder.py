@@ -46,6 +46,8 @@ def evaluate_decoder(
     temperature: float = 1.0,
     strong_generalization=False,
     reduce_users=False,
+    split_dataset=False,
+    split_qty=50,
 ):
     """
     Load a trained decoder and run evaluation on the held‐out split,
@@ -54,8 +56,15 @@ def evaluate_decoder(
     accelerator = Accelerator()
     device = accelerator.device
 
-    if dataset != RecDataset.AMAZON:
+    if dataset not in (RecDataset.AMAZON, RecDataset.AMAZON23):
         raise ValueError(f"Only AMAZON dataset supported, got {dataset}")
+    
+    amazon23_kwargs = {}
+    if dataset == RecDataset.AMAZON23:
+        amazon23_kwargs = {
+            "split_dataset": split_dataset,
+            "split_qty": split_qty,
+        }
     
     item_dataset = (
         ItemData(
@@ -66,6 +75,7 @@ def evaluate_decoder(
             category=category,
             strong_generalization=strong_generalization,
             reduce_users=reduce_users,
+            **amazon23_kwargs,
         )
     )
 
@@ -77,6 +87,7 @@ def evaluate_decoder(
         split=dataset_split,
         strong_generalization=strong_generalization,
         reduce_users=reduce_users,
+        **amazon23_kwargs,
     )
     eval_seq = SeqData(
         root=dataset_folder,
@@ -86,6 +97,7 @@ def evaluate_decoder(
         split=dataset_split,
         strong_generalization=strong_generalization,
         reduce_users=reduce_users,
+        **amazon23_kwargs,
     )
     test_dataset = SeqData(
         root=dataset_folder,
@@ -95,6 +107,7 @@ def evaluate_decoder(
         split=dataset_split,
         strong_generalization=strong_generalization,
         reduce_users=reduce_users,
+        **amazon23_kwargs,
     )
     eval_loader = DataLoader(eval_seq, batch_size=batch_size, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)

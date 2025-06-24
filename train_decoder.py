@@ -4,28 +4,17 @@ import gin
 import torch
 import wandb
 
-os.environ["TORCH_LOGS"] = "+dynamo"
-os.environ["TORCHDYNAMO_VERBOSE"] = "1"
-
 from accelerate import Accelerator
-from data.processed import ItemData
-from data.processed import RecDataset
-from data.processed import SeqData
-from data.utils import batch_to
-from data.utils import cycle
-from data.utils import next_batch
+from data.processed import ItemData, RecDataset, SeqData
+from data.utils import batch_to, cycle, next_batch
 from evaluate.metrics import TopKAccumulator
 from modules.model import EncoderDecoderRetrievalModel
 from modules.scheduler.inv_sqrt import InverseSquareRootScheduler
 from modules.tokenizer.semids import SemanticIdTokenizer
-from modules.utils import compute_debug_metrics
-from modules.utils import parse_config
-from modules.utils import compute_user_history_popularity
+from modules.utils import compute_debug_metrics, parse_config, compute_user_history_popularity
 from huggingface_hub import login
 from torch.optim import AdamW
-from torch.utils.data import BatchSampler
-from torch.utils.data import DataLoader
-from torch.utils.data import RandomSampler
+from torch.utils.data import BatchSampler, DataLoader, RandomSampler
 from tqdm import tqdm
 
 
@@ -70,9 +59,18 @@ def train(
     category=None,
     strong_generalization=False,
     reduce_users=False,
+    split_dataset=False,
+    split_qty=50,
 ):
-    if dataset != RecDataset.AMAZON:
+    if dataset not in (RecDataset.AMAZON, RecDataset.AMAZON23):
         raise Exception(f"Dataset currently not supported: {dataset}.")
+
+    amazon23_kwargs = {}
+    if dataset == RecDataset.AMAZON23:
+        amazon23_kwargs = {
+            "split_dataset": split_dataset,
+            "split_qty": split_qty,
+        }
 
     if wandb_logging:
         params = locals()
@@ -86,7 +84,7 @@ def train(
 
     if wandb_logging and accelerator.is_main_process:
         wandb.login()
-        run = wandb.init(project="gen-retrieval-decoder-training", config=params)
+        run = wandb.init(entity="joselgc-uva", project="gen-retrieval-decoder-training", config=params)
 
     item_dataset = (
         ItemData(
@@ -96,6 +94,7 @@ def train(
             split=dataset_split,
             strong_generalization=strong_generalization,
             reduce_users=reduce_users,
+            **amazon23_kwargs,
         )
         if category is None
         else ItemData(
@@ -106,6 +105,7 @@ def train(
             category=category,
             strong_generalization=strong_generalization,
             reduce_users=reduce_users,
+            **amazon23_kwargs,
         )   
     )
 
@@ -117,6 +117,7 @@ def train(
         split=dataset_split,
         strong_generalization=strong_generalization,
         reduce_users=reduce_users,
+        **amazon23_kwargs,
     )
 
     val_dataset = SeqData(
@@ -127,6 +128,7 @@ def train(
         split=dataset_split,
         strong_generalization=strong_generalization,
         reduce_users=reduce_users,
+        **amazon23_kwargs,
     )
 
     test_dataset = SeqData(
@@ -137,6 +139,7 @@ def train(
         split=dataset_split,
         strong_generalization=strong_generalization,
         reduce_users=reduce_users,
+        **amazon23_kwargs,
     )
     #########
 

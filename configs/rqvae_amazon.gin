@@ -24,5 +24,10 @@ train.vae_codebook_mode=%modules.quantize.QuantizeForwardMode.ROTATION_TRICK
 train.force_dataset_process=False
 train.dataset_split="beauty"
 train.do_eval=True
+# add the category here. If there is none then add None. Use 'store' for AMAZON23, 'brand' for others
+train.category="brand"
 train.strong_generalization=False
 train.reduce_users=False
+# Set to True for AMAZON23, False for others
+train.split_dataset=False
+train.split_qty=16384
