@@ -163,7 +163,7 @@ def train(
 
     if wandb_logging and accelerator.is_main_process:
         wandb.login()
-        run = wandb.init(entity="joselgc-uva", project="rq-vae-training", config=params)
+        run = wandb.init(project="rq-vae-training", config=params)
 
     start_iter = 0
     if pretrained_rqvae_path is not None:

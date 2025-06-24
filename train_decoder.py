@@ -84,7 +84,7 @@ def train(
 
     if wandb_logging and accelerator.is_main_process:
         wandb.login()
-        run = wandb.init(entity="joselgc-uva", project="gen-retrieval-decoder-training", config=params)
+        run = wandb.init(project="gen-retrieval-decoder-training", config=params)
 
     item_dataset = (
         ItemData(
