@@ -11,6 +11,7 @@ from modules.tokenizer.semids import SemanticIdTokenizer
 from modules.model import EncoderDecoderRetrievalModel
 from evaluate.metrics import TopKAccumulator
 from modules.utils import parse_config
+from modules.utils import compute_user_history_popularity
 
 @gin.configurable
 def evaluate_decoder(
@@ -43,6 +44,8 @@ def evaluate_decoder(
     # Inference
     ks: list = [1, 5, 10],
     temperature: float = 1.0,
+    strong_generalization=False,
+    reduce_users=False,
 ):
     """
     Load a trained decoder and run evaluation on the held‐out split,
@@ -61,16 +64,40 @@ def evaluate_decoder(
             force_process=False,
             split=dataset_split,
             category=category,
+            strong_generalization=strong_generalization,
+            reduce_users=reduce_users,
         )
+    )
+
+    train_dataset = SeqData(
+        root=dataset_folder,
+        dataset=dataset,
+        split_type="train",
+        subsample=True,
+        split=dataset_split,
+        strong_generalization=strong_generalization,
+        reduce_users=reduce_users,
     )
     eval_seq = SeqData(
         root=dataset_folder,
         dataset=dataset,
-        is_train=False,
+        split_type="eval",
         subsample=False,
         split=dataset_split,
+        strong_generalization=strong_generalization,
+        reduce_users=reduce_users,
+    )
+    test_dataset = SeqData(
+        root=dataset_folder,
+        dataset=dataset,
+        split_type="test",
+        subsample=False,
+        split=dataset_split,
+        strong_generalization=strong_generalization,
+        reduce_users=reduce_users,
     )
     eval_loader = DataLoader(eval_seq, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     tokenizer = SemanticIdTokenizer(
         input_dim=vae_input_dim,
@@ -85,6 +112,9 @@ def evaluate_decoder(
     )
     tokenizer = accelerator.prepare(tokenizer)
     tokenizer.precompute_corpus_ids(item_dataset)
+
+    device = next(tokenizer.parameters()).device
+    user_gap_p_dict, global_popularity_dict, user_brand_dists_dict = compute_user_history_popularity(train_dataset, tokenizer, device)
 
     model = EncoderDecoderRetrievalModel(
         embedding_dim=decoder_embed_dim,
@@ -103,7 +133,8 @@ def evaluate_decoder(
     model.load_state_dict(ckpt["model"])
     model = accelerator.prepare(model)
 
-    metrics_acc = TopKAccumulator(ks=ks)
+    eval_metrics_acc = TopKAccumulator(ks=ks, popularity_dict=global_popularity_dict, user_gap_p=user_gap_p_dict, user_brand_dists=user_brand_dists_dict)
+    test_metrics_acc = TopKAccumulator(ks=ks, popularity_dict=global_popularity_dict, user_gap_p=user_gap_p_dict, user_brand_dists=user_brand_dists_dict)
 
     model.eval()
     model.enable_generation = True
@@ -116,19 +147,41 @@ def evaluate_decoder(
                 tokenized, top_k=True, temperature=temperature
             )
         actual = tokenized.sem_ids_fut        
-        top_k = out.sem_ids                   
-        metrics_acc.accumulate(actual=actual, top_k=top_k, tokenizer=tokenizer)
+        top_k = out.sem_ids
+        user_ids = data.user_ids
+        eval_metrics_acc.accumulate(actual=actual, top_k=top_k, user_ids=user_ids, tokenizer=tokenizer)
 
-    results = metrics_acc.reduce()
+    for batch in test_loader:
+        data = batch_to(batch, device)
+        tokenized = tokenizer(data)
+        with torch.no_grad():
+            out = model.generate_next_sem_id(
+                tokenized, top_k=True, temperature=temperature
+            )
+        actual = tokenized.sem_ids_fut        
+        top_k = out.sem_ids
+        user_ids = data.user_ids
+        test_metrics_acc.accumulate(actual=actual, top_k=top_k, user_ids=user_ids, tokenizer=tokenizer)
+
+    eval_results = eval_metrics_acc.reduce()
+    test_results = test_metrics_acc.reduce()
+    
     print("\n=== Evaluation Results ===")
-    for metric, value in sorted(results.items()):
+    for metric, value in sorted(eval_results.items()):
         print(f"{metric:12s}: {value:.4f}")
+    print("\n=== Test Results ===")
+    for metric, value in sorted(test_results.items()):
+        print(f"{metric:12s}: {value:.4f}")
+
+    full_results = {
+        "eval": eval_results,
+        "test": test_results,
+    }
 
     os.makedirs(save_dir_root, exist_ok=True)
     json_path = os.path.join(save_dir_root, "eval_metrics.json")
     with open(json_path, 'w') as f:
-        json.dump(results, f, indent=2)
-    print(f"\nMetrics saved to {json_path}\n")
+        json.dump(full_results, f, indent=2)
 
 
 if __name__ == "__main__":

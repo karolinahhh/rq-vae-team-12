@@ -4,6 +4,8 @@ import torch
 from data.schemas import TokenizedSeqBatch
 from einops import rearrange
 from torch import Tensor
+from collections import defaultdict, Counter
+import numpy as np
 
 
 def reset_kv_cache(fn):
@@ -78,3 +80,39 @@ def compute_debug_metrics(
         }
         debug_metrics.update(loss_debug_metrics)
     return debug_metrics
+
+
+@torch.no_grad
+@torch._dynamo.disable
+def compute_user_history_popularity(train_dataset, tokenizer, device):
+    user_pop = defaultdict(list)
+    global_pop = Counter()
+    user_brand_counts = defaultdict(Counter)
+
+    for sample in train_dataset:
+        user_id = sample.user_ids.item()  # assumes batch size 1
+        ids = sample.ids[sample.ids >= 0]  # ignore padding (-1s)
+        for item_id in ids:
+            # tokenize that single item into semantic ID
+            sem_id = tokenizer.cached_ids[item_id].to(device)
+            # convert to string for search purposes
+            key = str(sem_id.tolist())
+            # track popularity
+            user_pop[user_id].append(key)
+            global_pop[key] += 1
+            # track brand 
+            brand = tokenizer.map_to_category.get(key, "unknown")
+            user_brand_counts[user_id][brand] += 1
+
+    # Map user_id → average historical item popularity
+    user_gap_p = {}
+    for user, items in user_pop.items():
+        popularities = [global_pop[item] for item in items]
+        user_gap_p[user] = np.mean(popularities)
+    #brand distributions
+    user_brand_dists = {
+        user: {b: count / sum(brand_counts.values()) for b, count in brand_counts.items()}
+        for user, brand_counts in user_brand_counts.items()
+    }
+
+    return user_gap_p, dict(global_pop), user_brand_dists

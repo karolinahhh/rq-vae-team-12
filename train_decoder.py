@@ -20,14 +20,13 @@ from modules.scheduler.inv_sqrt import InverseSquareRootScheduler
 from modules.tokenizer.semids import SemanticIdTokenizer
 from modules.utils import compute_debug_metrics
 from modules.utils import parse_config
+from modules.utils import compute_user_history_popularity
 from huggingface_hub import login
 from torch.optim import AdamW
 from torch.utils.data import BatchSampler
 from torch.utils.data import DataLoader
 from torch.utils.data import RandomSampler
 from tqdm import tqdm
-from collections import defaultdict, Counter
-import numpy as np
 
 
 @gin.configurable
@@ -166,43 +165,7 @@ def train(
     tokenizer.precompute_corpus_ids(item_dataset)
 
     device = next(tokenizer.parameters()).device
-
-    @torch.no_grad
-    @torch._dynamo.disable
-    def compute_user_history_popularity(train_dataset, tokenizer):
-        user_pop = defaultdict(list)
-        global_pop = Counter()
-        user_brand_counts = defaultdict(Counter)
-
-        for sample in train_dataset:
-            user_id = sample.user_ids.item()  # assumes batch size 1
-            ids = sample.ids[sample.ids >= 0]  # ignore padding (-1s)
-            for item_id in ids:
-                # tokenize that single item into semantic ID
-                sem_id = tokenizer.cached_ids[item_id].to(device)
-                # convert to string for search purposes
-                key = str(sem_id.tolist())
-                # track popularity
-                user_pop[user_id].append(key)
-                global_pop[key] += 1
-                # track brand 
-                brand = tokenizer.map_to_category.get(key, "unknown")
-                user_brand_counts[user_id][brand] += 1
-
-        # Map user_id → average historical item popularity
-        user_gap_p = {}
-        for user, items in user_pop.items():
-            popularities = [global_pop[item] for item in items]
-            user_gap_p[user] = np.mean(popularities)
-        #brand distributions
-        user_brand_dists = {
-            user: {b: count / sum(brand_counts.values()) for b, count in brand_counts.items()}
-            for user, brand_counts in user_brand_counts.items()
-        }
-
-        return user_gap_p, dict(global_pop), user_brand_dists
-    
-    user_gap_p_dict, global_popularity_dict, user_brand_dists_dict = compute_user_history_popularity(train_dataset, tokenizer)
+    user_gap_p_dict, global_popularity_dict, user_brand_dists_dict = compute_user_history_popularity(train_dataset, tokenizer, device)
 
     if push_vae_to_hf:
         login()
