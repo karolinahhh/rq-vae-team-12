@@ -177,9 +177,9 @@ class SeqData(Dataset):
         x_fut = self.item_data[item_ids_fut]
         x_fut[item_ids_fut == -1] = -1
 
-        x_fut_brand_id = torch.Tensor(
-            self.item_brand_id[item_ids_fut] if item_ids_fut != -1 else -1
-        )
+        # x_fut_brand_id = torch.Tensor(
+        #     self.item_brand_id[item_ids_fut] if item_ids_fut != -1 else -1
+        # )
 
         return SeqBatch(
             user_ids=user_ids,
