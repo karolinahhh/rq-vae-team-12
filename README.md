@@ -103,6 +103,7 @@ To run the baselines in a reproducible manner, we provide the commands needed to
 This command does not need to be run as the ouptut files are already provided but is here for reproducibility. Use it for all desired categories.
 
 ```
+cd CIKM2020-S3Rec-master
 srun python build_fairness_data.py --data_name Beauty
 srun python run_finetune_full.py --data_name Beauty 
 ```
